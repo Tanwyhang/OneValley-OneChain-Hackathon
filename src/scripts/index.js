@@ -1,11 +1,11 @@
 import { getFullnodeUrl, SuiClient } from '@onelabs/sui/client';
-import { requestSuiFromFaucetV1 } from '@onelabs/sui/faucet';
+import { getFaucetHost, requestSuiFromFaucetV1 } from '@onelabs/sui/faucet';
 import { MIST_PER_SUI } from '@onelabs/sui/utils';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
  
-const MY_ADDRESS = process.env.SUI_DEV_ADDRESS;
+const MY_ADDRESS = process.env.ONECHAIN_DEV_ADDRESS;
 
 if (!MY_ADDRESS) {
   console.error('SUI_DEV_ADDRESS not found in .env.local');
@@ -26,7 +26,7 @@ const main = async () => {
     owner: MY_ADDRESS,
   });
 
-  const FAUCET_URL = process.env.FAUCET_URL;
+  const FAUCET_URL = getFaucetHost('devnet');
 
   if (!FAUCET_URL) {
     console.error('FAUCET_URL not found in .env.local');
@@ -54,8 +54,8 @@ const main = async () => {
 const loop = async () => {
   while (true) {
     await main();
-    console.log('Waiting for 5 seconds before next execution...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('Waiting for 1 seconds before next execution...');
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 };
 

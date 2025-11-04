@@ -25,6 +25,24 @@ Stardew Valley (https://www.youtube.com/watch?v=ot7uXNQskhs)
 - **Resource Gathering:** Players can cut trees to gain materials for building infrastructure, houses, etc.
 - **Crafting, Buying, and Selling:** Players can craft, buy, and sell outfits, items, and pets on a marketplace.
 
+# Template Project Structure
+
+| Path                          | Description                                                                 |
+|-------------------------------|-----------------------------------------------------------------------------|
+| `src/pages/_document.tsx`     | A basic Next.js component entry point. It is used to define the `<html>` and `<body>` tags and other globally shared UI. |
+| `src`                         | Contains the Next.js client source code.                                   |
+| `src/styles/globals.css`      | Some simple global CSS rules to help with page layout. You can enable Tailwind CSS here. |
+| `src/page/_app.tsx`           | The main Next.js component.                                                |
+| `src/App.tsx`                 | Middleware component used to run Phaser in client mode.                    |
+| `src/PhaserGame.tsx`          | The React component that initializes the Phaser Game and serves as a bridge between React and Phaser. |
+| `src/game/EventBus.ts`        | A simple event bus to communicate between React and Phaser.                |
+| `src/game`                    | Contains the game source code.                                             |
+| `src/game/main.tsx`           | The main game entry point. This contains the game configuration and starts the game. |
+| `src/game/scenes/`            | The Phaser Scenes are in this folder.                                      |
+| `public/favicon.png`          | The default favicon for the project.                                       |
+| `public/assets`               | Contains the static assets used by the game.                               |
+
+
 # Asset Structure
 
 ```
@@ -119,6 +137,106 @@ Stardew Valley (https://www.youtube.com/watch?v=ot7uXNQskhs)
     └── rain_ambient.mp3
 ```
 
+## Token Details: OCT
+
+### 🧩 What You Have
+
+```json
+{
+  "objectId": "0x014c53c494e72099d8b496e1966a358c5543b1c23cb09321348d8bed61821fc5",
+  "version": "150",
+  "digest": "FVkmnFFnQVkfGorjHyh2rZgP3YvCo8MuDZk7JRRCMsDX",
+  "type": "0x2::coin::Coin<0x2::oct::OCT>",
+  "content": {
+    "fields": {
+      "balance": "1000000000",
+      "id": {
+        "id": "0x014c53c494e72099d8b496e1966a358c5543b1c23cb09321348d8bed61821fc5"
+      }
+    }
+  }
+}
+```
+
+### 💰 Breakdown
+
+| Field                            | Meaning                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `objectId`                       | The on-chain ID of this **coin object**.                                              |
+| `type`                           | The **Move type** — tells you what coin this is.                                      |
+| `balance`                        | The **amount** of tokens this object holds (in base units).                           |
+| `0x2::coin::Coin<0x2::oct::OCT>` | Means this is an **OCT token object**, not SUI.                                       |
+| `balance: "1000000000"`          | Means you own **1,000,000,000 base units** of OCT (the decimals depend on the token). |
+
+### 🧾 Coin Type
+
+Your **coinType** is:
+
+```
+0x2::oct::OCT
+```
+
+That’s what you’ll use when calling balance queries or doing transfers.
+
+For example:
+
+```ts
+const balance = await client.getBalance({
+  owner: '0x343d0fa835cd723704ee9fe0aa7adc9956cf59f2161102fa601645b0c6727992',
+  coinType: '0x2::oct::OCT',
+});
+```
+
+This will return:
+
+```json
+{
+  "coinType": "0x2::oct::OCT",
+  "totalBalance": "1000000000",
+  "coinObjectCount": 1
+}
+```
+
+### ⚙️ Next Steps You Can Do
+
+1. **Check balance total:**
+
+   ```ts
+   await client.getAllBalances({ owner: 'your_wallet_address' });
+   ```
+
+2. **List all coin objects for that coinType:**
+
+   ```ts
+   await client.getCoins({
+     owner: 'your_wallet_address',
+     coinType: '0x2::oct::OCT'
+   });
+   ```
+
+3. **Transfer some OCT tokens:**
+
+   ```ts
+   const tx = new Transaction();
+   tx.transferObjects(
+     ['0x014c53c494e72099d8b496e1966a358c5543b1c23cb09321348d8bed61821fc5'], // coin object IDs
+     '0xRECIPIENT_ADDRESS'
+   );
+   await signAndExecuteTransaction({ tx });
+   ```
+
+### 🧠 Summary
+
+✅ Your test token exists.
+✅ It’s an **OCT token**.
+✅ You have **1,000,000,000 units** in that coin object.
+✅ You can now query or transfer it using its coinType:
+
+```
+0x2::oct::OCT
+```
+```
+
 # Development Plan: Building a Next-Gen Blockchain Game
 
 This plan is designed to integrate web3 features from the beginning, ensuring a seamless player experience and a robust, player-owned token economy.
@@ -126,9 +244,10 @@ This plan is designed to integrate web3 features from the beginning, ensuring a 
 - [ ] **Phase 1: Foundation & On-Chain Identity**
     - *Goal: Establish a stable project base and a frictionless onboarding process for players.*
     - [ ] **Project Scaffolding:** Initialize Git, Next.js, and Phaser project structure.
-    - [ ] **Seamless Onboarding:** Implement `zkLogin` to allow players to sign up and log in with social accounts (e.g., Google, Twitch), automatically creating a secure Sui wallet in the background.
-    - [ ] **Game World Entry:** Create the initial farm scene using Tiled and load it into Phaser.
-    - [ ] **Player Representation:** Load the basic player sprite, implementing movement (walk, run) and idle animations.
+    - [ ] **Main Menu Scene:** Design and implement a main menu UI within the React application.
+    - [ ] **Seamless Onboarding:** Integrate `zkLogin` into the main menu. The primary action will be a "Connect & Play" button (using Google, Twitch, etc.).
+    - [ ] **Gated Game Entry:** The Phaser game component will only be rendered *after* a successful zkLogin connection and wallet session are established.
+    - [ ] **Game World & Player:** Create the initial farm scene and load the player sprite with basic movement and animations.
 
 - [ ] **Phase 2: Core Loop & First On-Chain Assets**
     - *Goal: Make the primary game activity (farming) directly result in the creation of tangible on-chain assets.*
