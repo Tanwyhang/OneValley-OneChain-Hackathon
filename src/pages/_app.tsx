@@ -1,4 +1,5 @@
 import "@/styles/globals.css";
+import '@onelabs/dapp-kit/dist/index.css';
 import type { AppProps } from "next/app";
 import { createNetworkConfig, SuiClientProvider, WalletProvider } from '@onelabs/dapp-kit';
 import { getFullnodeUrl } from '@onelabs/sui/client';
