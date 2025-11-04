@@ -1,0 +1,97 @@
+{
+  "project": "OneValley-OneChain",
+  "description": "Expected asset structure and filenames for the OneValley-OneChain game (Phaser + Next.js). Replace placeholders with final art/audio.",
+  "tilesets": [
+    "ground.png",
+    "water_anim.png",
+    "path.png",
+    "crops.png",
+    "buildings.png",
+    "decorations.png"
+  ],
+  "maps": [
+    "farm_map.json",
+    "town_map.json",
+    "market_map.json",
+    "interiors/player_house.json",
+    "interiors/shop.json"
+  ],
+  "sprites": {
+    "player": [
+      "player_idle.png",
+      "player_walk.png",
+      "player_run.png",
+      "player_hoe.png",
+      "player_water.png",
+      "player_sickle.png",
+      "player_sleep.png",
+      "player_emotes.png"
+    ],
+    "npcs": [
+      "villager_male.png",
+      "villager_female.png",
+      "merchant.png",
+      "animals/chicken.png",
+      "animals/cow.png",
+      "animals/sheep.png",
+      "animals/cat.png"
+    ],
+    "crops": [
+      "wheat.png",
+      "tomato.png",
+      "carrot.png",
+      "pumpkin.png",
+      "golden_tomato.png"
+    ],
+    "items": [
+      "tools.png",
+      "seeds.png",
+      "produce.png",
+      "materials.png",
+      "potions.png",
+      "currency.png"
+    ],
+    "effects": [
+      "dust.png",
+      "sparkle.png",
+      "splash.png",
+      "leaf_fall.png",
+      "rain_drop.png"
+    ],
+    "ui": [
+      "toolbar.png",
+      "inventory_panel.png",
+      "dialogue_box.png",
+      "buttons/buy.png",
+      "buttons/sell.png",
+      "buttons/trade.png",
+      "buttons/close.png",
+      "icons/heart.png",
+      "icons/energy.png",
+      "icons/coin.png"
+    ],
+    "meta": [
+      "animations.json",
+      "atlas.json",
+      "manifest.json"
+    ]
+  },
+  "audio": [
+    "bg_farm.mp3",
+    "bg_town.mp3",
+    "step_grass.wav",
+    "hoe_swing.wav",
+    "plant_seed.wav",
+    "harvest.wav",
+    "trade_success.wav",
+    "rain_ambient.mp3"
+  ],
+  "notes": {
+    "image_format": "PNG (prefer 32-bit RGBA). Use 2D sprite sheets or individual frames as indicated.",
+    "audio_format": "MP3 for music, WAV for short SFX. Keep loop points documented separately.",
+    "maps": "Tiled JSON exports (orthogonal, 32x32 tiles by default).",
+    "atlas": "If using texture atlases, update atlas.json frame coordinates to match exported PNG.",
+    "animations": "animations.json should define Phaser frame sequences and frame rates for sprites.",
+    "replacement_instructions": "Drop final assets into the exact relative paths under public/assets/. Update manifest.json when ready."
+  }
+}

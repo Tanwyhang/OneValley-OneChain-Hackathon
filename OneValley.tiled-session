@@ -1,0 +1,137 @@
+{
+    "expandedProjectPaths": [
+        "Downloaded Tilesets/Roguelike pack/Map",
+        "public/assets",
+        "public",
+        "public/assets/maps",
+        "OneValley-OneChain-Hackathon/public/assets/tilesets",
+        "OneValley-OneChain-Hackathon/public/assets/maps",
+        "Downloaded Tilesets/Roguelike pack",
+        ".",
+        "OneValley-OneChain-Hackathon/public/assets",
+        "OneValley-OneChain-Hackathon/public",
+        "OneValley-OneChain-Hackathon",
+        "Downloaded Tilesets",
+        "public/assets/tilesets"
+    ],
+    "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        ":/automap-tiles.tsx": {
+            "scaleInDock": 1
+        },
+        "Downloaded Tilesets/Roguelike pack/Map/sample_indoor.tmx": {
+            "scale": 2,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 302.25,
+                "y": 248.5
+            }
+        },
+        "Downloaded Tilesets/Roguelike pack/Map/sample_indoor.tmx#roguelikeSheet_transparent": {
+            "scaleInDock": 1
+        },
+        "Downloaded Tilesets/Roguelike pack/Map/sample_map.tmx": {
+            "scale": 2,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 629,
+                "y": 433.5
+            }
+        },
+        "Downloaded Tilesets/Roguelike pack/Map/sample_map.tmx#Roguelike": {
+            "scaleInDock": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/maps/farm_map.json": {
+            "scale": 1.5,
+            "selectedLayer": 1,
+            "viewCenter": {
+                "x": 618.6666666666667,
+                "y": 614.6666666666666
+            }
+        },
+        "OneValley-OneChain-Hackathon/public/assets/maps/farm_map.json#Roguelike": {
+            "scaleInDock": 3
+        },
+        "OneValley-OneChain-Hackathon/public/assets/maps/market_map.json": {
+            "scale": 2,
+            "selectedLayer": 4,
+            "viewCenter": {
+                "x": 206.5,
+                "y": 198.5
+            }
+        },
+        "OneValley-OneChain-Hackathon/public/assets/maps/town_map.json": {
+            "scale": 1.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 400,
+                "y": 400
+            }
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/Cliff_Tile.tsx": {
+            "scaleInDock": 4,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/Grass_Middle.tsx": {
+            "scaleInDock": 11,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/OneValley.tsx": {
+            "dynamicWrapping": false,
+            "scaleInDock": 2,
+            "scaleInEditor": 1.5
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/Path_Tile.tsx": {
+            "scaleInDock": 3,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/Tileset Spring.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/allinone.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/roguelikeSheet_transparent.tsx": {
+            "dynamicWrapping": true,
+            "scaleInDock": 2,
+            "scaleInEditor": 1
+        },
+        "OneValley-OneChain-Hackathon/public/assets/tilesets/town_map.json": {
+            "scale": 1.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 329.66666666666663,
+                "y": 346.6666666666667
+            }
+        },
+        "public/assets/maps/farm_map.json": {
+            "scale": 1.05925,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 399.81118716072694,
+                "y": 399.8111871607269
+            }
+        },
+        "public/assets/maps/farm_map.json#Roguelike": {
+            "scaleInDock": 1
+        },
+        "public/assets/maps/market_map.json": {
+            "scale": 1.444,
+            "selectedLayer": 4,
+            "viewCenter": {
+                "x": 200.13850415512462,
+                "y": 141.9667590027701
+            }
+        },
+        "public/assets/tilesets/OneValley.tsx": {
+            "scaleInDock": 1
+        },
+        "public/assets/tilesets/roguelikeSheet_transparent.tsx": {
+            "scaleInDock": 1
+        }
+    }
+}
