@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 import { EventBus } from '../EventBus';
 
-export class Game extends Scene
+export class FarmScene extends Scene
 {
     // Map properties
     private map!: Phaser.Tilemaps.Tilemap;
@@ -26,7 +26,7 @@ export class Game extends Scene
 
     constructor ()
     {
-        super('Game');
+        super('FarmScene');
     }
 
     preload ()

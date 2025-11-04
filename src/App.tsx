@@ -1,31 +1,45 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { IRefPhaserGame, PhaserGame } from './PhaserGame';
-// import { ConnectButton, useWallet } from '@onelabs/dapp-kit';
+import { ConnectModal, useCurrentAccount } from '@onelabs/dapp-kit';
 
 function App() {
-    // TODO: Uncomment wallet integration when ready (Phase 1 - Task 2)
-    // const { connected } = useWallet();
+    const currentAccount = useCurrentAccount();
+    const [gameStarted, setGameStarted] = useState(false);
+    const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-    //  References to the PhaserGame component (game and scene are exposed)
     const phaserRef = useRef<IRefPhaserGame | null>(null);
+
+    const handleStartGame = () => {
+        setGameStarted(true);
+    };
 
     return (
         <div id="app">
-            {/* Temporarily show game directly without wallet connection */}
-            <PhaserGame ref={phaserRef} />
-            
-            {/* TODO: Uncomment when wallet integration is ready */}
-            {/* {connected ? (
-                <PhaserGame ref={phaserRef} />
-            ) : (
+            {!currentAccount ? (
                 <div className="main-menu">
                     <h1>Welcome to OneValley</h1>
                     <p>Connect your wallet to start your adventure!</p>
-                    <ConnectButton />
+                    <ConnectModal
+                        trigger={
+                            <button className="button">
+                                Connect Wallet
+                            </button>
+                        }
+                        open={isConnectModalOpen}
+                        onOpenChange={setIsConnectModalOpen}
+                    />
                 </div>
-            )} */}
+            ) : gameStarted ? (
+                <PhaserGame ref={phaserRef} />
+            ) : (
+                <div className="main-menu">
+                    <h1>Wallet Connected!</h1>
+                    <p>Address: {currentAccount.address}</p>
+                    <button className="button" onClick={handleStartGame}>Start Game</button>
+                </div>
+            )}
         </div>
     );
 }
 
-export default App
+export default App;

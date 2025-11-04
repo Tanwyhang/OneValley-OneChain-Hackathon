@@ -1,4 +1,4 @@
-import { Game as MainGame } from './scenes/Game';
+import { FarmScene } from './scenes/FarmScene';
 import { AUTO, Game, Types } from "phaser";
 
 // Find out more information about the Game Config at:
@@ -19,7 +19,7 @@ const config: Types.Core.GameConfig = {
         }
     },
     scene: [
-        MainGame
+        FarmScene
     ]
 };
 
