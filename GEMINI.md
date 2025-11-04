@@ -6,7 +6,7 @@ This project is a web-based game that integrates the Phaser 3 game engine with a
 
 - **Frontend:** Next.js, React
 - **Game Engine:** Phaser 3
-- **Blockchain:** SUI (using `@onelabs/sui` SDK)
+- **Blockchain:** SUI (using `@onelabs/sui` SDK), zkLogin, RWA
 - **Language:** TypeScript, JavaScript
 - **Package Manager:** npm
 
@@ -119,37 +119,47 @@ Stardew Valley (https://www.youtube.com/watch?v=ot7uXNQskhs)
     └── rain_ambient.mp3
 ```
 
-# Development Phases
+# Development Plan: Building a Next-Gen Blockchain Game
 
-- [ ] **Phase 1: Core Setup & Player Movement**
-    - [ ] Initialize project and set up Git.
-    - [ ] Create the asset directory structure.
-    - [ ] Create a basic farm map with Tiled.
-    - [ ] Load player sprite and implement basic movement (up, down, left, right).
-    - [ ] Implement idle and walking animations.
-- [ ] **Phase 2: Farming & Core Mechanics**
-    - [ ] Implement the ability to use tools (hoe, watering can).
-    - [ ] Implement planting seeds.
-    - [ ] Implement crop growth over time.
-    - [ ] Implement harvesting crops.
-    - [ ] Implement a basic inventory system.
-- [ ] **Phase 3: Resource Gathering & Crafting**
-    - [ ] Add trees to the map.
-    - [ ] Implement the ability to cut trees and gather wood.
-    - [ ] Implement a basic crafting system (e.g., craft a fence from wood).
-- [ ] **Phase 4: NPCs & Interaction**
-    - [ ] Add a simple NPC to the map.
-    - [ ] Implement basic NPC movement (e.g., walking a set path).
-    - [ ] Implement a dialogue system to chat with the NPC.
-- [ ] **Phase 5: Blockchain Integration & Marketplace**
-    - [ ] Integrate SUI wallet connection.
-    - [ ] Create an in-game currency token on SUI.
-    - [ ] Implement earning currency from farming.
-    - [ ] Design and implement a basic marketplace UI.
-    - [ ] Implement buying/selling items on the marketplace.
-- [ ] **Phase 6: Polish & Expansion**
-    - [ ] Add pets.
-    - [ ] Implement server visiting/chat.
-    - [ ] Add more crops, items, and crafting recipes.
-    - [ ] Add sound effects and background music.
-    - [ ] Refine UI and overall user experience.
+This plan is designed to integrate web3 features from the beginning, ensuring a seamless player experience and a robust, player-owned token economy.
+
+- [ ] **Phase 1: Foundation & On-Chain Identity**
+    - *Goal: Establish a stable project base and a frictionless onboarding process for players.*
+    - [ ] **Project Scaffolding:** Initialize Git, Next.js, and Phaser project structure.
+    - [ ] **Seamless Onboarding:** Implement `zkLogin` to allow players to sign up and log in with social accounts (e.g., Google, Twitch), automatically creating a secure Sui wallet in the background.
+    - [ ] **Game World Entry:** Create the initial farm scene using Tiled and load it into Phaser.
+    - [ ] **Player Representation:** Load the basic player sprite, implementing movement (walk, run) and idle animations.
+
+- [ ] **Phase 2: Core Loop & First On-Chain Assets**
+    - *Goal: Make the primary game activity (farming) directly result in the creation of tangible on-chain assets.*
+    - [ ] **Define Game Currency:** Deploy the primary in-game currency (e.g., `$VALLEY` token) as a Fungible Token on the Sui network.
+    - [ ] **Farming Mechanics:** Implement tool actions for tilling soil and watering crops.
+    - [ ] **On-Chain Harvest:** When a player harvests a crop (e.g., wheat), mint it as a Fungible Token (e.g., `WHEAT_TOKEN`) directly to their wallet.
+    - [ ] **Wallet-Driven UI:** Develop the first version of the player inventory that reads and displays token balances directly from the player's Sui wallet.
+
+- [ ] **Phase 3: The Player-Owned Economy**
+    - *Goal: Empower players to participate in a decentralized, peer-to-peer marketplace.*
+    - [ ] **Personalized Shops:** Implement the `Sui Kiosk` standard, giving every player their own on-chain "Farmer's Stall."
+    - [ ] **Marketplace Interface:** Create a UI where players can browse items being sold by others.
+    - [ ] **Listing Assets:** Allow players to list their harvested produce (e.g., `WHEAT_TOKEN`) in their Kiosk for a price set in `$VALLEY` tokens.
+    - [ ] **Purchasing Assets:** Enable players to buy assets from other players' Kiosks, executing the trade on-chain.
+
+- [ ] **Phase 4: Expanding the Asset Universe (NFTs)**
+    - *Goal: Introduce unique, non-fungible assets that deepen the gameplay and economy.*
+    - [ ] **On-Chain Crafting:** Implement a crafting system where players can combine basic tokens (e.g., wood, stone) to mint new, unique NFTs (e.g., a `FENCE_NFT`, `FURNITURE_NFT`).
+    - [ ] **Unique Collectibles:** Design and introduce rare items like special tools, cosmetic outfits, and pets as NFTs with distinct properties.
+    - [ ] **Quest Rewards:** Implement an NPC and quest system where completing a quest rewards the player with a specific NFT or a bundle of tokens.
+
+- [ ] **Phase 5: Social Layer & Advanced Trading**
+    - *Goal: Foster community and enable more complex economic interactions.*
+    - [ ] **World Exploration:** Allow players to visit the farms of other players (initially hardcoded).
+    - [ ] **Player Communication:** Implement a basic in-game chat system.
+    - [ ] **Direct Trading:** Build a UI for direct player-to-player atomic swaps, allowing them to trade any combination of NFTs and tokens securely without relying on the public marketplace.
+
+- [ ] **Phase 6: Polish, Mainnet Launch, and Live-Ops**
+    - *Goal: Refine the experience and prepare for public launch.*
+    - [ ] **Sensory Feedback:** Integrate sound effects and background music.
+    - [ ] **UI/UX Refinement:** Polish all user interfaces and game controls based on playtesting.
+    - [ ] **Final Testing:** Conduct comprehensive testing on the Sui Testnet.
+    - [ ] **Deployment:** Deploy all smart contracts and the front-end application to Mainnet.
+    - [ ] **Post-Launch:** Plan for future content updates, new assets, and community events.
