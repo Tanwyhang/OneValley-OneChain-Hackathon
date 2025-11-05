@@ -16,8 +16,7 @@ function App() {
     return (
         <div id="app">
             {!currentAccount ? (
-                <div className="main-menu">
-                    <h1>Welcome to OneValley</h1>
+                <div className="main-menu flex flex-col items-center justify-center">
                     <p>Connect your wallet to start your adventure!</p>
                     <ConnectModal
                         trigger={
@@ -32,7 +31,7 @@ function App() {
             ) : gameStarted ? (
                 <PhaserGame ref={phaserRef} />
             ) : (
-                <div className="main-menu">
+                <div className="main-menu flex flex-col items-center justify-center">
                     <h1>Wallet Connected!</h1>
                     <p>Address: {currentAccount.address}</p>
                     <button className="button" onClick={handleStartGame}>Start Game</button>
