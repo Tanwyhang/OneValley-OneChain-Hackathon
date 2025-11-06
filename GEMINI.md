@@ -1,22 +1,14 @@
 # Project Overview
 
-This project is a web-based game that integrates the Phaser 3 game engine with a Next.js and React frontend. The game is inspired by Stardew Valley and will include features like farming, crafting, and social interaction. The project also includes integration with the OneChain blockchain for in-game currency and a marketplace.
+This project is a web-based game that integrates the Phaser 3 game engine with a Next.js and React frontend. The game is inspired by Stardew Valley and will include features like farming, crafting, and social interaction. The project also includes integration with the SUI blockchain for in-game currency and a marketplace.
 
 # Tech Stack
 
 - **Frontend:** Next.js, React
 - **Game Engine:** Phaser 3
-- **Blockchain:** OneChain (a fork of Sui, using `@onelabs/sui` SDK, `SuiGraphQLClient` for data queries), zkLogin, Swap (when user wanna swap other coin for OCT [in testnet] and NFT minted in-game items upon acquirement), OneChain Kiosks for in-game Marketplace
+- **Blockchain:** SUI (using `@onelabs/sui` SDK), zkLogin, RWA
 - **Language:** TypeScript, JavaScript
 - **Package Manager:** npm
-
-# Game Economy Model
-
-To create a rich, player-driven economy, the game will use a dual-token model:
-
-1.  **Primary Currency (`OCT`):** This is the main currency of the game, used for all marketplace transactions. Players use OCT to buy and sell goods from each other. It is the unit of account for the game's economy.
-
-2.  **Secondary Resource Tokens (e.g., `WHEAT_TOKEN`, `WOOD_TOKEN`):** These are fungible tokens that represent the raw materials and crafted goods in the game. Players acquire these by performing in-game actions like farming and resource gathering. These tokens can be used for crafting or can be sold to other players on the marketplace for OCT.
 
 # Game MVP
 
@@ -31,7 +23,7 @@ Stardew Valley (https://www.youtube.com/watch?v=ot7uXNQskhs)
 - **Farming:** Players can manage their own farm to earn in-game currency.
 - **Pets:** Players can tame pets to speed up farming time.
 - **Resource Gathering:** Players can cut trees to gain materials for building infrastructure, houses, etc.
-- **Crafting, Buying, and Selling:** Players can craft, buy, and sell outfits, items, and pets on a marketplace. (OneChain Kiosks)
+- **Crafting, Buying, and Selling:** Players can craft, buy, and sell outfits, items, and pets on a marketplace.
 
 # Template Project Structure
 
@@ -243,36 +235,37 @@ This will return:
 ```
 0x2::oct::OCT
 ```
-
+```
 
 # Development Plan: Building a Next-Gen Blockchain Game
 
 This plan is designed to integrate web3 features from the beginning, ensuring a seamless player experience and a robust, player-owned token economy.
 
-- [x] **Phase 1: Foundation & On-Chain Identity**
+- [/] **Phase 1: Foundation & On-Chain Identity**
     - *Goal: Establish a stable project base and a frictionless onboarding process for players.*
-    - [x] **Project Scaffolding:** Initialize Git, Next.js, and Phaser project structure.
-    - [x] **Main Menu Scene:** Design and implement a main menu UI within the React application.
-    - [x] **Seamless Onboarding:** Integrate `zkLogin` into the main menu. The primary action will be a "Connect & Play" button (using Google, Twitch, etc.).
-    - [x] **Gated Game Entry:** The Phaser game component will only be rendered *after* a successful zkLogin connection and wallet session are established.
-    - [x] **Game World & Player:** Create the initial farm scene and load the player sprite with basic movement and animations.
+    - [/] **Project Scaffolding:** Initialize Git, Next.js, and Phaser project structure.
+    - [ ] **Main Menu Scene:** Design and implement a main menu UI within the React application.
+    - [ ] **Seamless Onboarding:** Integrate `zkLogin` into the main menu. The primary action will be a "Connect & Play" button (using Google, Twitch, etc.).
+    - [ ] **Gated Game Entry:** The Phaser game component will only be rendered *after* a successful zkLogin connection and wallet session are established.
+    - [ ] **Game World & Player:** Create the initial farm scene and load the player sprite with basic movement and animations.
 
 - [ ] **Phase 2: Core Loop & First On-Chain Assets**
-    - *Goal: Implement the core game loop where players acquire on-chain **Resource Tokens** through gameplay.*
-    - [x] **Farming Mechanics:** Implement tool actions for planting and watering crops.
-    - [ ] **On-Chain Resources:** When a player harvests a crop (e.g., wheat), mint it as a **Resource Token** (`WHEAT_TOKEN`) directly to their wallet.
-    - [ ] **Wallet-Driven UI:** Develop the first version of the player inventory that reads and displays token balances directly from the player's OneChain wallet using `SuiGraphQLClient`.
+    - *Goal: Make the primary game activity (farming) directly result in the creation of tangible on-chain assets.*
+    - [ ] **Define Game Currency:** Deploy the primary in-game currency (e.g., `$VALLEY` token) as a Fungible Token on the Sui network.
+    - [ ] **Farming Mechanics:** Implement tool actions for tilling soil and watering crops.
+    - [ ] **On-Chain Harvest:** When a player harvests a crop (e.g., wheat), mint it as a Fungible Token (e.g., `WHEAT_TOKEN`) directly to their wallet.
+    - [ ] **Wallet-Driven UI:** Develop the first version of the player inventory that reads and displays token balances directly from the player's Sui wallet.
 
 - [ ] **Phase 3: The Player-Owned Economy**
-    - *Goal: Empower players to trade their **Resource Tokens** for the **Primary Currency (OCT)** in a decentralized marketplace.*
-    - [ ] **Personalized Shops:** Implement the `OneChain Kiosk` standard, giving every player their own on-chain "Farmer's Stall."
-    - [ ] **Marketplace Interface:** Create a UI where players can browse items being sold by others using `SuiGraphQLClient`.
-    - [ ] **Listing Assets:** Allow players to list their harvested **Resource Tokens** (e.g., `WHEAT_TOKEN`) in their Kiosk for a price set in OCT tokens.
+    - *Goal: Empower players to participate in a decentralized, peer-to-peer marketplace.*
+    - [ ] **Personalized Shops:** Implement the `Sui Kiosk` standard, giving every player their own on-chain "Farmer's Stall."
+    - [ ] **Marketplace Interface:** Create a UI where players can browse items being sold by others.
+    - [ ] **Listing Assets:** Allow players to list their harvested produce (e.g., `WHEAT_TOKEN`) in their Kiosk for a price set in `$VALLEY` tokens.
     - [ ] **Purchasing Assets:** Enable players to buy assets from other players' Kiosks, executing the trade on-chain.
 
 - [ ] **Phase 4: Expanding the Asset Universe (NFTs)**
     - *Goal: Introduce unique, non-fungible assets that deepen the gameplay and economy.*
-    - [ ] **On-Chain Crafting:** Implement a crafting system where players can combine **Resource Tokens** (e.g., `WOOD_TOKEN`, `STONE_TOKEN`) to mint new, unique NFTs (e.g., a `FENCE_NFT`, `FURNITURE_NFT`).
+    - [ ] **On-Chain Crafting:** Implement a crafting system where players can combine basic tokens (e.g., wood, stone) to mint new, unique NFTs (e.g., a `FENCE_NFT`, `FURNITURE_NFT`).
     - [ ] **Unique Collectibles:** Design and introduce rare items like special tools, cosmetic outfits, and pets as NFTs with distinct properties.
     - [ ] **Quest Rewards:** Implement an NPC and quest system where completing a quest rewards the player with a specific NFT or a bundle of tokens.
 
@@ -286,6 +279,6 @@ This plan is designed to integrate web3 features from the beginning, ensuring a 
     - *Goal: Refine the experience and prepare for public launch.*
     - [ ] **Sensory Feedback:** Integrate sound effects and background music.
     - [ ] **UI/UX Refinement:** Polish all user interfaces and game controls based on playtesting.
-    - [ ] **Final Testing:** Conduct comprehensive testing on the OneChain Testnet.
+    - [ ] **Final Testing:** Conduct comprehensive testing on the Sui Testnet.
     - [ ] **Deployment:** Deploy all smart contracts and the front-end application to Mainnet.
     - [ ] **Post-Launch:** Plan for future content updates, new assets, and community events.
