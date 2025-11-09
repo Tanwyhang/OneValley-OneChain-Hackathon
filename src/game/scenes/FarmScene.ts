@@ -23,6 +23,7 @@ export class FarmScene extends Scene
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
     private currentDirection: string = 'down';
+    private initialZoom: number = 10;
 
     constructor ()
     {
@@ -65,122 +66,69 @@ export class FarmScene extends Scene
 
     private createMap(): void
     {
-        // Create the tilemap
         this.map = this.make.tilemap({ key: 'farm_map' });
-        
-        // Add the tileset (the name 'Roguelike' must match the tileset name in the JSON)
         this.tileset = this.map.addTilesetImage('OneValley', 'tileset')!;
-        
-        // Create layers in order (bottom to top)
-        const groundLayer = this.map.createLayer('Ground', this.tileset, 0, 0);
-        const farmingLayer = this.map.createLayer('Farming Dirt + Water + Routes', this.tileset, 0, 0);
-        const decoLayer = this.map.createLayer('Deco', this.tileset, 0, 0);
-        const treesLayer = this.map.createLayer('Trees', this.tileset, 0, 0);
-        const houseBodyLayer = this.map.createLayer('House\'s Body', this.tileset, 0, 0);
-        const houseRoofLayer = this.map.createLayer('House\'s Roof', this.tileset, 0, 0);
-        const houseObjLayer = this.map.createLayer('House\'s Obj', this.tileset, 0, 0);
-        
-        // Set collision for trees and house layers (player can't walk through them)
-        treesLayer?.setCollisionByExclusion([-1]);
-        houseBodyLayer?.setCollisionByExclusion([-1]);
-        houseRoofLayer?.setCollisionByExclusion([-1]);
-        houseObjLayer?.setCollisionByExclusion([-1]);
-        
-        // Store collision layers for later use with player (filter out nulls)
-        this.collisionLayers = [treesLayer, houseBodyLayer, houseRoofLayer, houseObjLayer].filter(layer => layer !== null) as Phaser.Tilemaps.TilemapLayer[];
-        
-        // Set world bounds to match map size (50 tiles * 16 pixels = 800x800)
+        this.collisionLayers = [];
+
+        const createLayer = (
+            name: string,
+            depth: number,
+            collides: boolean = false
+        ): Phaser.Tilemaps.TilemapLayer | null => {
+            const layer = this.map.createLayer(name, this.tileset, 0, 0);
+            layer?.setDepth(depth);
+
+            if (collides && layer) {
+                layer.setCollisionByExclusion([-1]);
+                this.collisionLayers.push(layer);
+            }
+
+            return layer;
+        };
+
+        createLayer('Ground', -10);
+        createLayer('Farming Dirt + Water + Routes', -5);
+    createLayer('Deco', 10);
+    createLayer('House', 15);
+
+        ['Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E']
+            .forEach((name, index) => createLayer(name, 20 + index));
+
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
     }
 
     private createPlayerAnimations(): void
     {
-        // DOWN animations (frames 0, 3)
-        this.anims.create({
-            key: 'idle-down',
-            frames: [{ key: 'player', frame: 0 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-down',
-            frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 3 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-down',
-            frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 3 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // UP animations (frames 1, 5)
-        this.anims.create({
-            key: 'idle-up',
-            frames: [{ key: 'player', frame: 1 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-up',
-            frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 5 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-up',
-            frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 5 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // LEFT animations (mirrored from right frames 2, 6)
-        this.anims.create({
-            key: 'idle-left',
-            frames: [{ key: 'player', frame: 2 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-left',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-left',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // RIGHT animations (frames 2, 6)
-        this.anims.create({
-            key: 'idle-right',
-            frames: [{ key: 'player', frame: 2 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-right',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-right',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 10,
-            repeat: -1
+        const directionConfig: Record<string, { idle: number; move: number[] }> = {
+            down: { idle: 0, move: [0, 3] },
+            up: { idle: 1, move: [1, 5] },
+            right: { idle: 2, move: [2, 6] },
+            left: { idle: 2, move: [2, 6] }
+        };
+
+        Object.entries(directionConfig).forEach(([direction, frames]) => {
+            this.anims.create({
+                key: `idle-${direction}`,
+                frames: [{ key: 'player', frame: frames.idle }],
+                frameRate: 1,
+                repeat: -1
+            });
+
+            const mappedFrames = frames.move.map(frame => ({ key: 'player', frame }));
+
+            this.anims.create({
+                key: `walk-${direction}`,
+                frames: mappedFrames,
+                frameRate: 6,
+                repeat: -1
+            });
+
+            this.anims.create({
+                key: `run-${direction}`,
+                frames: mappedFrames,
+                frameRate: 10,
+                repeat: -1
+            });
         });
     }
 
@@ -190,15 +138,19 @@ export class FarmScene extends Scene
         this.player = this.physics.add.sprite(400, 400, 'player', 0);
         this.player.setScale(0.30);
         this.player.setCollideWorldBounds(true);
-        this.player.body!.setSize(this.player.width * 0.6, this.player.height * 0.5);
-        this.player.body!.setOffset(this.player.width * 0.2, this.player.height * 0.4);
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        body.setSize(this.player.width * 0.6, this.player.height * 0.5);
+        body.setOffset(this.player.width * 0.2, this.player.height * 0.4);
         this.player.play('idle-down');
+        this.player.setDepth(1000);
         
         // Add collision with map layers (trees, houses)
         this.collisionLayers.forEach(layer => {
             this.physics.add.collider(this.player, layer);
         });
-    }    private setupInputs(): void
+    }
+
+    private setupInputs(): void
     {
         this.cursors = this.input.keyboard!.createCursorKeys();
         this.wasd = {
@@ -227,9 +179,8 @@ export class FarmScene extends Scene
         const gameWidth = this.scale.gameSize.width;
         const gameHeight = this.scale.gameSize.height;
 
-        // Calculate zoom to fit the map nicely on screen
-        // Use a base zoom that works well for the map size
-        const baseZoom = Math.min(gameWidth / 800, gameHeight / 600);
+        // Use the initialZoom property as the base zoom
+        const baseZoom = this.initialZoom;
 
         // Ensure zoom doesn't go below 1 or above 3
         const zoom = Phaser.Math.Clamp(baseZoom, 1, 3);
@@ -253,39 +204,39 @@ export class FarmScene extends Scene
         const up = this.cursors.up.isDown || this.wasd.up.isDown;
         const down = this.cursors.down.isDown || this.wasd.down.isDown;
         const isRunning = this.shiftKey.isDown;
-        
         const speed = isRunning ? this.playerRunSpeed : this.playerSpeed;
-        this.player.setVelocity(0, 0);
-        
-        if (left) {
-            this.player.setVelocityX(-speed);
+
+        const velocity = new Phaser.Math.Vector2(
+            Number(right) - Number(left),
+            Number(down) - Number(up)
+        );
+
+        if (velocity.x < 0) {
             this.currentDirection = 'left';
-        } else if (right) {
-            this.player.setVelocityX(speed);
+        } else if (velocity.x > 0) {
             this.currentDirection = 'right';
         }
-        
-        if (up) {
-            this.player.setVelocityY(-speed);
+
+        if (velocity.y < 0) {
             this.currentDirection = 'up';
-        } else if (down) {
-            this.player.setVelocityY(speed);
+        } else if (velocity.y > 0) {
             this.currentDirection = 'down';
         }
-        
-        if (this.player.body!.velocity.x !== 0 && this.player.body!.velocity.y !== 0) {
-            this.player.setVelocity(
-                this.player.body!.velocity.x * 0.7071,
-                this.player.body!.velocity.y * 0.7071
-            );
+
+        if (velocity.lengthSq() > 0) {
+            velocity.normalize().scale(speed);
+            this.player.setVelocity(velocity.x, velocity.y);
+        } else {
+            this.player.setVelocity(0, 0);
         }
-        
+
         this.updatePlayerAnimation(isRunning);
     }
 
     private updatePlayerAnimation(isRunning: boolean): void
     {
-        const isMoving = this.player.body!.velocity.x !== 0 || this.player.body!.velocity.y !== 0;
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        const isMoving = body.velocity.x !== 0 || body.velocity.y !== 0;
         
         if (this.currentDirection === 'left') {
             this.player.setFlipX(true);
