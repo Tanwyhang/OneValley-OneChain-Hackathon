@@ -7,6 +7,8 @@ export class FarmScene extends Scene
     private map!: Phaser.Tilemaps.Tilemap;
     private tileset!: Phaser.Tilemaps.Tileset;
     private collisionLayers: Phaser.Tilemaps.TilemapLayer[] = [];
+    private farmingLayer!: Phaser.Tilemaps.TilemapLayer;
+    private cropsLayer!: Phaser.Tilemaps.TilemapLayer;
     
     // Player-related properties
     private player!: Phaser.Physics.Arcade.Sprite;
@@ -18,7 +20,11 @@ export class FarmScene extends Scene
         right: Phaser.Input.Keyboard.Key;
     };
     private shiftKey!: Phaser.Input.Keyboard.Key;
+    private interactKey!: Phaser.Input.Keyboard.Key;
     
+    // Farming properties
+    private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
+
     // Player state
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
@@ -56,6 +62,9 @@ export class FarmScene extends Scene
         this.setupInputs();
         this.setupCamera();
         
+        // Listen for interaction
+        this.handleInteraction();
+
         EventBus.emit('current-scene-ready', this);
     }
 
@@ -87,7 +96,10 @@ export class FarmScene extends Scene
         };
 
         createLayer('Ground', -10);
-        createLayer('Farming Dirt + Water + Routes', -5);
+        this.farmingLayer = createLayer('Farming Dirt + Water + Routes', -5)!;
+        this.cropsLayer = this.map.createBlankLayer('Crops', this.tileset, 0, 0)!;
+        this.cropsLayer.setDepth(-4);
+
     createLayer('Deco', 10);
     createLayer('House', 15);
 
@@ -160,6 +172,7 @@ export class FarmScene extends Scene
             right: this.input.keyboard!.addKey('D')
         };
         this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+        this.interactKey = this.input.keyboard!.addKey('E');
     }
 
     private setupCamera(): void
@@ -231,6 +244,28 @@ export class FarmScene extends Scene
         }
 
         this.updatePlayerAnimation(isRunning);
+    }
+
+    private handleInteraction(): void {
+        this.interactKey.on('down', () => {
+            const playerTileX = this.farmingLayer.worldToTileX(this.player.x);
+            const playerTileY = this.farmingLayer.worldToTileY(this.player.y);
+            const radius = 2;
+
+            for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
+                for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
+                    const targetTile = this.farmingLayer.getTileAt(x, y);
+                    const cropTile = this.cropsLayer.getTileAt(x, y);
+
+                    // Check if the tile is tilled soil and has no crop on it
+                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && (!cropTile || cropTile.index === -1)) {
+                        // Plant a crop and immediately stop searching
+                        this.cropsLayer.putTileAt(1774, x, y);
+                        return; 
+                    }
+                }
+            }
+        });
     }
 
     private updatePlayerAnimation(isRunning: boolean): void
