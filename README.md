@@ -12,6 +12,20 @@ This template has been updated for:
 
 ![screenshot](screenshot.png)
 
+## 📚 Learning Resources
+
+**New to game development?** Check out these beginner-friendly guides:
+
+- **[HOW_THE_GAME_WORKS.md](./HOW_THE_GAME_WORKS.md)** - Complete step-by-step walkthrough explaining how this 2D RPG was built from scratch. Perfect for beginners!
+- **[GAME_ARCHITECTURE_SIMPLE.md](./GAME_ARCHITECTURE_SIMPLE.md)** - Visual guide with diagrams showing how all the pieces fit together.
+
+These guides explain:
+- How 2D games work (the game loop, sprites, animations)
+- How the map system works (tilemaps)
+- How player movement and controls work
+- How React and Phaser communicate
+- How to add new features
+
 ## Requirements
 
 [Node.js](https://nodejs.org) is required to install dependencies and run scripts via `npm`.
