@@ -21,6 +21,7 @@ export class FarmScene extends Scene
     };
     private shiftKey!: Phaser.Input.Keyboard.Key;
     private interactKey!: Phaser.Input.Keyboard.Key;
+    private escKey!: Phaser.Input.Keyboard.Key;
 
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -217,6 +218,9 @@ export class FarmScene extends Scene
         };
         this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
         this.interactKey = this.input.keyboard!.addKey('E');
+        this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+        
+        this.escKey.on('down', () => this.exitFarm());
     }
 
     private setupCamera(): void
@@ -330,6 +334,14 @@ export class FarmScene extends Scene
         } else {
             this.player.play(`walk-${this.currentDirection}`, true);
         }
+    }
+
+    private exitFarm(): void {
+        this.cameras.main.fadeOut(500, 0, 0, 0);
+        
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.scene.start('WorldSelectionScene');
+        });
     }
 
     destroy(): void

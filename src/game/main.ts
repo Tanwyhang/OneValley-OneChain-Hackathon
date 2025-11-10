@@ -1,3 +1,4 @@
+import { WorldSelectionScene } from './scenes/WorldSelectionScene';
 import { FarmScene } from './scenes/FarmScene';
 import { AUTO, Game, Types } from "phaser";
 
@@ -20,6 +21,7 @@ const config: Types.Core.GameConfig = {
         }
     },
     scene: [
+        WorldSelectionScene,
         FarmScene
     ]
 };
