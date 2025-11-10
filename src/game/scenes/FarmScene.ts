@@ -33,7 +33,7 @@ export class FarmScene extends Scene
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
     private currentDirection: string = 'down';
-    private initialZoom: number = 5;
+    private initialZoom: number = 4;
 
     constructor ()
     {
