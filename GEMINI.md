@@ -259,7 +259,7 @@ This plan is designed to integrate web3 features from the beginning, ensuring a 
 
 - [ ] **Phase 2: Core Loop & First On-Chain Assets**
     - *Goal: Implement the core game loop where players acquire on-chain **Resource Tokens** through gameplay.*
-    - [ ] **Farming Mechanics:** Implement tool actions for planting and watering crops.
+    - [x] **Farming Mechanics:** Implement tool actions for planting and watering crops.
     - [ ] **On-Chain Resources:** When a player harvests a crop (e.g., wheat), mint it as a **Resource Token** (`WHEAT_TOKEN`) directly to their wallet.
     - [ ] **Wallet-Driven UI:** Develop the first version of the player inventory that reads and displays token balances directly from the player's OneChain wallet using `SuiGraphQLClient`.
 

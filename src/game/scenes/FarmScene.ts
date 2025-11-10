@@ -21,6 +21,10 @@ export class FarmScene extends Scene
     };
     private shiftKey!: Phaser.Input.Keyboard.Key;
     private interactKey!: Phaser.Input.Keyboard.Key;
+
+    // Particle properties
+    private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+    private windTimer!: Phaser.Time.TimerEvent;
     
     // Farming properties
     private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
@@ -29,7 +33,7 @@ export class FarmScene extends Scene
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
     private currentDirection: string = 'down';
-    private initialZoom: number = 10;
+    private initialZoom: number = 5;
 
     constructor ()
     {
@@ -49,6 +53,9 @@ export class FarmScene extends Scene
             frameWidth: 125,
             frameHeight: 250
         });
+
+        // Load particle image
+        this.load.image('firefly', 'firefly.png');
     }
 
     create ()
@@ -62,6 +69,9 @@ export class FarmScene extends Scene
         this.setupInputs();
         this.setupCamera();
         
+        // Create particles
+        this.createParticles();
+
         // Listen for interaction
         this.handleInteraction();
 
@@ -101,12 +111,46 @@ export class FarmScene extends Scene
         this.cropsLayer.setDepth(-4);
 
     createLayer('Deco', 10);
-    createLayer('House', 15);
+    createLayer('House', 15, false);
+    createLayer('Market', 18, false);
 
         ['Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E']
-            .forEach((name, index) => createLayer(name, 20 + index));
+            .forEach((name, index) => createLayer(name, 20 + index, false));
 
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+    }
+
+    private createParticles(): void {
+        this.particleEmitter = this.add.particles(
+            0, 0, // x, y coordinates (will be overridden by emitZone)
+            'firefly',
+            {
+                x: { min: 0, max: this.map.widthInPixels },
+                y: { min: 0, max: this.map.heightInPixels },
+                lifespan: 5000,
+                speed: { min: 3, max: 15 },
+                scale: { start: 0.1, end: 0 },
+                alpha: { start: 1, end: 0 },
+                quantity: 3,
+                blendMode: 'ADD'
+            }
+        );
+
+        this.windTimer = this.time.addEvent({
+            delay: 5000, // 5 seconds
+            callback: this.updateWind,
+            callbackScope: this,
+            loop: true
+        });
+    }
+
+    private updateWind(): void {
+        const windX = Phaser.Math.Between(-20, 20);
+        const windY = Phaser.Math.Between(-20, 20);
+        
+        // Correct way to set acceleration in recent Phaser 3 versions
+        this.particleEmitter.accelerationX = windX;
+        this.particleEmitter.accelerationY = windY;
     }
 
     private createPlayerAnimations(): void
@@ -196,7 +240,7 @@ export class FarmScene extends Scene
         const baseZoom = this.initialZoom;
 
         // Ensure zoom doesn't go below 1 or above 3
-        const zoom = Phaser.Math.Clamp(baseZoom, 1, 3);
+        const zoom = Phaser.Math.Clamp(baseZoom, 1, 100);
 
         this.cameras.main.setZoom(zoom);
     }
@@ -292,5 +336,6 @@ export class FarmScene extends Scene
     {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
+        this.windTimer.destroy();
     }
 }
