@@ -680,8 +680,13 @@ export class FarmScene extends Scene
         this.player.setScale(2.0);
         this.player.setCollideWorldBounds(true);
         const body = this.player.body as Phaser.Physics.Arcade.Body;
-        body.setSize(19.2, 16);
-        body.setOffset(6.4, 12.8);
+
+        // Make the collision body 50% smaller than the visual sprite
+        // Original: 19.2 x 16, New: 9.6 x 8 (50% of original)
+        body.setSize(9.6, 8);
+        // Center the smaller collision box within the sprite
+        body.setOffset((32 - 9.6) / 2, (32 - 8) / 2);
+
         this.player.play('idle-down');
         this.player.setDepth(1000);
 
