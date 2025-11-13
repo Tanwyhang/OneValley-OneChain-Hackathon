@@ -94,6 +94,12 @@ export class FarmScene extends Scene
 
         // Load chatbox image
         this.load.image('chatbox', '../Cute_Fantasy_Free/Player/chatbox.png');
+        
+        // Load chat dialog image
+        this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
+        
+        // Load chat dialog image
+        this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
 
         // Load particle image
         this.load.image('firefly', 'firefly.png');
@@ -958,42 +964,27 @@ export class FarmScene extends Scene
         chatboxIndicator.setDepth(2000);
         this.player.setData('chatboxIndicator', chatboxIndicator);
         
-        // Create player's chat bubble with text background
+        // Create player's chat bubble with chatdialog image
         const playerBubble = this.add.container(this.player.x, this.player.y - 10);
         playerBubble.setDepth(2000);
         
-        const playerBackground = this.add.graphics();
-        playerBackground.fillStyle(0xe8f4f8, 0.95);
-        playerBackground.lineStyle(2, 0x000000, 1);
-        
-        playerBackground.fillRoundedRect(
-            -bubbleWidth / 2,
-            -bubbleHeight,
-            bubbleWidth,
-            bubbleHeight,
-            6
-        );
-        playerBackground.strokeRoundedRect(
-            -bubbleWidth / 2,
-            -bubbleHeight,
-            bubbleWidth,
-            bubbleHeight,
-            6
-        );
+        // Add chatdialog image
+        const chatDialogImage = this.add.image(0, -20, 'chatdialog');
+        chatDialogImage.setScale(0.15); // Scale down from 905x276
         
         this.chatText = this.add.text(
             0,
-            -bubbleHeight / 2,
+            -20,
             '',
             {
                 fontSize: '10px',
                 color: '#000000',
-                wordWrap: { width: bubbleWidth - bubblePadding * 2 }
+                wordWrap: { width: 120 }
             }
         );
         this.chatText.setOrigin(0.5, 0.5);
         
-        playerBubble.add([playerBackground, this.chatText]);
+        playerBubble.add([chatDialogImage, this.chatText]);
         this.player.setData('chatBubble', playerBubble);
         
         // Create NPC's chat bubble (hidden initially)
@@ -1001,39 +992,24 @@ export class FarmScene extends Scene
         this.chatBubble.setDepth(2000);
         this.chatBubble.setVisible(false);
         
-        this.chatBackground = this.add.graphics();
-        this.chatBackground.fillStyle(0xffffff, 0.95);
-        this.chatBackground.lineStyle(2, 0x000000, 1);
-        
-        this.chatBackground.fillRoundedRect(
-            -bubbleWidth / 2,
-            -bubbleHeight,
-            bubbleWidth,
-            bubbleHeight,
-            6
-        );
-        this.chatBackground.strokeRoundedRect(
-            -bubbleWidth / 2,
-            -bubbleHeight,
-            bubbleWidth,
-            bubbleHeight,
-            6
-        );
+        // Add chatdialog image for NPC
+        const npcDialogImage = this.add.image(0, -20, 'chatdialog');
+        npcDialogImage.setScale(0.15); // Scale down from 905x276
         
         this.npcResponse = this.add.text(
             0,
-            -bubbleHeight / 2,
+            -20,
             'Deal!',
             {
                 fontSize: '10px',
                 color: '#000000',
                 fontStyle: 'bold',
-                wordWrap: { width: bubbleWidth - bubblePadding * 2 }
+                wordWrap: { width: 120 }
             }
         );
         this.npcResponse.setOrigin(0.5, 0.5);
         
-        this.chatBubble.add([this.chatBackground, this.npcResponse]);
+        this.chatBubble.add([npcDialogImage, this.npcResponse]);
     }
 
     private handleChatInput(event: KeyboardEvent): void {
