@@ -325,7 +325,8 @@ export class WorldSelectionScene extends Scene {
         const text = this.add.text(0, 0, label, {
             fontFamily: '"Press Start 2P", system-ui, -apple-system, sans-serif',
             fontSize: '16px',
-            color: isActive ? '#FFE4B5' : '#5C4033'
+            color: isActive ? '#FFE4B5' : '#5C4033',
+            resolution: 1
         }).setOrigin(0.5);
         
         container.add([graphics, text]);
@@ -354,7 +355,8 @@ export class WorldSelectionScene extends Scene {
         this.searchText = this.add.text(centerX - searchWidth / 2 + 15, searchY, 'SEARCH…', {
             fontFamily: '"Press Start 2P", system-ui, -apple-system, sans-serif',
             fontSize: '14px',
-            color: '#A0826D'
+            color: '#A0826D',
+            resolution: 1
         }).setOrigin(0, 0.5);
     }
 
@@ -503,7 +505,8 @@ export class WorldSelectionScene extends Scene {
             align: 'center',
             wordWrap: { width: size - 24 },
             stroke: '#000000',
-            strokeThickness: 2
+            strokeThickness: 2,
+            resolution: 1
         }).setOrigin(0.5);
         
         const nameText = this.add.text(0, size / 2 - nameBarHeight / 2, worldData.name, {
@@ -514,7 +517,8 @@ export class WorldSelectionScene extends Scene {
             wordWrap: { width: size - 24 },
             stroke: '#5C2E0A',
             strokeThickness: 3,
-            shadow: { offsetX: 0, offsetY: 2, color: '#000000', blur: 4, fill: true }
+            shadow: { offsetX: 0, offsetY: 2, color: '#000000', blur: 4, fill: true },
+            resolution: 1
         }).setOrigin(0.5);
         
         container.add([shadow, border, highlight, innerShadow, thumbnailBg, farmImage, grid, nameBar, corners, shadowText, nameText]);
@@ -606,7 +610,8 @@ export class WorldSelectionScene extends Scene {
             align: 'center',
             stroke: '#000000',
             strokeThickness: 3,
-            shadow: { offsetX: 0, offsetY: 2, color: '#000000', blur: 4, fill: true }
+            shadow: { offsetX: 0, offsetY: 2, color: '#000000', blur: 4, fill: true },
+            resolution: 1
         }).setOrigin(0.5);
         
         const statusText = this.add.text(0, size / 2 - nameBarHeight / 2 - 10, friendData.status, {
@@ -615,7 +620,8 @@ export class WorldSelectionScene extends Scene {
             color: '#FFE4B5',
             align: 'center',
             stroke: '#000000',
-            strokeThickness: 2
+            strokeThickness: 2,
+            resolution: 1
         }).setOrigin(0.5);
         
         container.add([shadow, border, thumbnailBg, farmImage, nameBar, highlightBar, nameText, statusText]);

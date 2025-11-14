@@ -34,6 +34,7 @@ export class FarmScene extends Scene
     private escKey!: Phaser.Input.Keyboard.Key;
     private attackKey!: Phaser.Input.Keyboard.Key;
     private spaceKey!: Phaser.Input.Keyboard.Key;
+    private cutKey!: Phaser.Input.Keyboard.Key;
 
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -48,9 +49,14 @@ export class FarmScene extends Scene
     private currentDirection: string = 'down';
     private initialZoom: number = 3;
     private isAttacking: boolean = false;
+    private isCutting: boolean = false;
+    private treeLayers: Phaser.Tilemaps.TilemapLayer[] = [];
+    private tileCollisionBodies: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
     
-    // Chickens
+    // Animals
     private chickens: Phaser.Physics.Arcade.Sprite[] = [];
+    private cows: Phaser.Physics.Arcade.Sprite[] = [];
+    private sheep: Phaser.Physics.Arcade.Sprite[] = [];
     
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
@@ -62,6 +68,11 @@ export class FarmScene extends Scene
     private chatText!: Phaser.GameObjects.Text;
     private playerInput: string = '';
     private npcResponse!: Phaser.GameObjects.Text;
+    
+    // Settings UI
+    private settingsIcon!: Phaser.GameObjects.Image;
+    private settingsModal!: Phaser.GameObjects.Container;
+    private isNearNPC: boolean = false;
 
     constructor ()
     {
@@ -79,22 +90,35 @@ export class FarmScene extends Scene
         // Load tileset collision data (TSX file)
         this.load.xml('tileset_collision', 'tilesets/OneValley.tsx');
         
-        // Load player sprite
+        // Load merged player sprite (192x320 image, 10 columns x 6 rows)
+        // Rows: idle/walk animations (rows 1-4), attack animations (rows 5-6)
         this.load.spritesheet('player', '../Cute_Fantasy_Free/Player/Player.png', {
             frameWidth: 32,
             frameHeight: 32
         });
 
-        // Load player attack sprite (128x128 image, 4 columns x 4 rows, but last row only has 4 frames)
-        // Actual calculation: width 128/4 = 32, height 128/4 = 32
-        this.load.spritesheet('player_attack', '../Cute_Fantasy_Free/Player/Player_Attack.png', {
-            frameWidth: 32,
-            frameHeight: 32
+        // Load player actions sprite (96x576 image, 2 columns x 12 rows)
+        // Frames 6-7: cut tree left/right, 8-9: cut tree down, 10-11: cut tree up
+        this.load.spritesheet('player_actions', '../Cute_Fantasy_Free/Player/Player_Actions.png', {
+            frameWidth: 48,
+            frameHeight: 48
         });
 
         // Load chicken sprite (64x64 image, 2 columns x 2 rows)
         // Row 1: idle (2 frames), Row 2: walking (2 frames)
         this.load.spritesheet('chicken', '../Cute_Fantasy_Free/Animals/Chicken/Chicken.png', {
+            frameWidth: 32,
+            frameHeight: 32
+        });
+        
+        // Load cow sprite (same structure as chicken)
+        this.load.spritesheet('cow', '../Cute_Fantasy_Free/Animals/Cow/Cow.png', {
+            frameWidth: 32,
+            frameHeight: 32
+        });
+        
+        // Load sheep sprite (same structure as chicken)
+        this.load.spritesheet('sheep', '../Cute_Fantasy_Free/Animals/Sheep/Sheep.png', {
             frameWidth: 32,
             frameHeight: 32
         });
@@ -111,8 +135,8 @@ export class FarmScene extends Scene
         // Load chat dialog image
         this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
         
-        // Load chat dialog image
-        this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
+        // Load settings icon
+        this.load.image('settings_icon', '../Cute_Fantasy_Free/Player/player_settings.png');
 
         // Load particle image
         this.load.image('firefly', 'firefly.png');
@@ -126,9 +150,13 @@ export class FarmScene extends Scene
         // Create player and controls
         this.createPlayerAnimations();
         this.createChickenAnimations();
+        this.createCowAnimations();
+        this.createSheepAnimations();
         this.createNPCAnimations();
         this.createPlayer();
         this.createChickens();
+        this.createCows();
+        this.createSheep();
         this.createNPC();
         this.setupInputs();
         this.setupCamera();
@@ -152,6 +180,7 @@ export class FarmScene extends Scene
         }
         this.updateNPCNamePosition();
         this.updateChatBubblePosition();
+        this.checkNPCProximity();
     }
 
     private updateNPCNamePosition(): void {
@@ -160,6 +189,124 @@ export class FarmScene extends Scene
         const nameText = this.npc.getData('nameText');
         if (nameText) {
             nameText.setPosition(this.npc.x, this.npc.y - 30);
+        }
+        
+        // Update settings icon position if visible
+        if (this.settingsIcon && this.settingsIcon.visible) {
+            this.settingsIcon.setPosition(this.npc.x - 25, this.npc.y - 30);
+        }
+    }
+
+    private checkNPCProximity(): void {
+        if (!this.npc || !this.npc.active || !this.player) return;
+        
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            this.npc.x, this.npc.y
+        );
+        
+        const proximityRange = 80;
+        
+        if (distance < proximityRange && !this.isNearNPC) {
+            this.isNearNPC = true;
+            this.showSettingsIcon();
+        } else if (distance >= proximityRange && this.isNearNPC) {
+            this.isNearNPC = false;
+            this.hideSettingsIcon();
+        }
+    }
+    
+    private showSettingsIcon(): void {
+        if (!this.settingsIcon) {
+            this.createSettingsIcon();
+        }
+        this.settingsIcon.setVisible(true);
+    }
+    
+    private hideSettingsIcon(): void {
+        if (this.settingsIcon) {
+            this.settingsIcon.setVisible(false);
+        }
+    }
+    
+    private createSettingsIcon(): void {
+        // Create settings icon next to NPC name (left side)
+        this.settingsIcon = this.add.image(this.npc.x - 25, this.npc.y - 30, 'settings_icon');
+        this.settingsIcon.setScale(0.03); // Scale down from 1024x1024
+        this.settingsIcon.setDepth(2000);
+        this.settingsIcon.setInteractive({ useHandCursor: true });
+        this.settingsIcon.setVisible(false);
+        
+        // Click handler
+        this.settingsIcon.on('pointerdown', () => {
+            this.openSettingsModal();
+        });
+        
+        // Hover effects
+        this.settingsIcon.on('pointerover', () => {
+            this.settingsIcon.setScale(0.035);
+        });
+        
+        this.settingsIcon.on('pointerout', () => {
+            this.settingsIcon.setScale(0.03);
+        });
+    }
+    
+    private openSettingsModal(): void {
+        if (this.settingsModal) {
+            this.settingsModal.setVisible(true);
+            return;
+        }
+        
+        // Create modal container
+        this.settingsModal = this.add.container(400, 300);
+        this.settingsModal.setDepth(2000);
+        this.settingsModal.setScrollFactor(0);
+        
+        // Semi-transparent background overlay
+        const overlay = this.add.rectangle(0, 0, 800, 600, 0x000000, 0.7);
+        overlay.setOrigin(0.5);
+        overlay.setInteractive();
+        
+        // Modal background
+        const modalBg = this.add.rectangle(0, 0, 400, 300, 0xffffff, 1);
+        modalBg.setStrokeStyle(3, 0x000000);    
+        
+        // Title text
+        const titleText = this.add.text(0, -120, 'Settings', {
+            fontSize: '24px',
+            color: '#000000',
+            fontStyle: 'bold',
+            resolution: 3
+        });
+        titleText.setOrigin(0.5);
+        
+        // Close button
+        const closeButton = this.add.text(180, -130, 'X', {
+            fontSize: '20px',
+            color: '#ff0000',
+            fontStyle: 'bold',
+            resolution: 3
+        });
+        closeButton.setOrigin(0.5);
+        closeButton.setInteractive({ useHandCursor: true });
+        closeButton.on('pointerdown', () => {
+            this.closeSettingsModal();
+        });
+        closeButton.on('pointerover', () => {
+            closeButton.setScale(1.2);
+        });
+        closeButton.on('pointerout', () => {
+            closeButton.setScale(1);
+        });
+        
+        // Add all elements to modal
+        this.settingsModal.add([overlay, modalBg, titleText, closeButton]);
+    }
+    
+    private closeSettingsModal(): void {
+        if (this.settingsModal) {
+            this.settingsModal.setVisible(false);
         }
     }
 
@@ -220,7 +367,12 @@ export class FarmScene extends Scene
         createLayer('fence', 25, true);          // Fences should have collision
 
         ['Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E']
-            .forEach((name, index) => createLayer(name, 20 + index, true));  // Trees should have collision
+            .forEach((name, index) => {
+                const treeLayer = createLayer(name, 20 + index, true);
+                if (treeLayer) {
+                    this.treeLayers.push(treeLayer);
+                }
+            });  // Trees should have collision
 
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
 
@@ -402,6 +554,17 @@ export class FarmScene extends Scene
             body.setOrigin(0.5, 0.5);
             body.setVisible(false); // Hide the placeholder sprite
             body.setImmovable(true);
+            
+            // Track collision bodies by tile position for tree layers
+            if (rect.layer && rect.layer.startsWith('Trees')) {
+                const tileX = Math.floor(rect.x / 16);
+                const tileY = Math.floor(rect.y / 16);
+                const key = `${tileX}_${tileY}_${rect.layer}`;
+                if (!this.tileCollisionBodies.has(key)) {
+                    this.tileCollisionBodies.set(key, []);
+                }
+                this.tileCollisionBodies.get(key)!.push(body);
+            }
         });
 
         // For polygons, create multiple small rectangles to approximate the shape
@@ -422,6 +585,17 @@ export class FarmScene extends Scene
                 body.setOrigin(0.5, 0.5);
                 body.setVisible(false);
                 body.setImmovable(true);
+                
+                // Track collision bodies by tile position for tree layers
+                if (poly.layer && poly.layer.startsWith('Trees')) {
+                    const tileX = Math.floor(poly.x / 16);
+                    const tileY = Math.floor(poly.y / 16);
+                    const key = `${tileX}_${tileY}_${poly.layer}`;
+                    if (!this.tileCollisionBodies.has(key)) {
+                        this.tileCollisionBodies.set(key, []);
+                    }
+                    this.tileCollisionBodies.get(key)!.push(body);
+                }
             }
         });
 
@@ -435,6 +609,18 @@ export class FarmScene extends Scene
         this.chickens.forEach(chicken => {
             if (chicken && chicken.active) {
                 this.physics.add.collider(chicken, collisionGroup);
+            }
+        });
+        
+        this.cows.forEach(cow => {
+            if (cow && cow.active) {
+                this.physics.add.collider(cow, collisionGroup);
+            }
+        });
+        
+        this.sheep.forEach(sheepAnimal => {
+            if (sheepAnimal && sheepAnimal.active) {
+                this.physics.add.collider(sheepAnimal, collisionGroup);
             }
         });
 
@@ -576,28 +762,28 @@ export class FarmScene extends Scene
             repeat: -1
         });
 
-        // Attack animations (4 frames each, using separate attack sprite sheet)
+        // Attack animations (4 frames each, now in merged sprite sheet)
         this.anims.create({
             key: 'attack-up',
-            frames: this.anims.generateFrameNumbers('player_attack', { start: 8, end: 11 }),
+            frames: this.anims.generateFrameNumbers('player', { start: 48, end: 51 }),
             frameRate: 10,
             repeat: 0
         });
         this.anims.create({
             key: 'attack-right',
-            frames: this.anims.generateFrameNumbers('player_attack', { start: 4, end: 7 }),
+            frames: this.anims.generateFrameNumbers('player', { start: 42, end: 45 }),
             frameRate: 10,
             repeat: 0
         });
         this.anims.create({
             key: 'attack-down',
-            frames: this.anims.generateFrameNumbers('player_attack', { start: 0, end: 3 }),
+            frames: this.anims.generateFrameNumbers('player', { start: 36, end: 39 }),
             frameRate: 10,
             repeat: 0
         });
         this.anims.create({
             key: 'attack-left',
-            frames: this.anims.generateFrameNumbers('player_attack', { start: 4, end: 7 }),
+            frames: this.anims.generateFrameNumbers('player', { start: 42, end: 45 }),
             frameRate: 10,
             repeat: 0
         });
@@ -605,8 +791,34 @@ export class FarmScene extends Scene
         // Dead animation (4 frames)
         this.anims.create({
             key: 'dead',
-            frames: this.anims.generateFrameNumbers('player_attack', { start: 12, end: 15 }),
+            frames: this.anims.generateFrameNumbers('player', { start: 54, end: 57 }),
             frameRate: 6,
+            repeat: 0
+        });
+
+        // Tree cutting animations (using player_actions sprite sheet)
+        this.anims.create({
+            key: 'cut-tree-right',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 6, end: 7 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'cut-tree-left',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 6, end: 7 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'cut-tree-down',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 8, end: 9 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'cut-tree-up',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 10, end: 11 }),
+            frameRate: 8,
             repeat: 0
         });
     }
@@ -625,6 +837,44 @@ export class FarmScene extends Scene
         this.anims.create({
             key: 'chicken-walk',
             frames: this.anims.generateFrameNumbers('chicken', { start: 2, end: 3 }),
+            frameRate: 6,
+            repeat: -1
+        });
+    }
+
+    private createCowAnimations(): void
+    {
+        // Cow idle animation (2 frames)
+        this.anims.create({
+            key: 'cow-idle',
+            frames: this.anims.generateFrameNumbers('cow', { start: 0, end: 1 }),
+            frameRate: 4,
+            repeat: -1
+        });
+
+        // Cow walking animation (2 frames)
+        this.anims.create({
+            key: 'cow-walk',
+            frames: this.anims.generateFrameNumbers('cow', { start: 2, end: 3 }),
+            frameRate: 6,
+            repeat: -1
+        });
+    }
+
+    private createSheepAnimations(): void
+    {
+        // Sheep idle animation (2 frames)
+        this.anims.create({
+            key: 'sheep-idle',
+            frames: this.anims.generateFrameNumbers('sheep', { start: 0, end: 1 }),
+            frameRate: 4,
+            repeat: -1
+        });
+
+        // Sheep walking animation (2 frames)
+        this.anims.create({
+            key: 'sheep-walk',
+            frames: this.anims.generateFrameNumbers('sheep', { start: 2, end: 3 }),
             frameRate: 6,
             repeat: -1
         });
@@ -696,15 +946,14 @@ export class FarmScene extends Scene
 
     private createChickens(): void
     {
-        // Spawn 3 chickens at different positions on the farm
-        const chickenPositions = [
-            { x: 200, y: 300 },
-            { x: 600, y: 400 },
-            { x: 400, y: 600 }
-        ];
-
-        chickenPositions.forEach(pos => {
-            const chicken = this.physics.add.sprite(pos.x, pos.y, 'chicken', 0);
+        // Spawn 5-6 chickens in the first fence (top-left enclosure)
+        // Fence area: x: 16-112 (tiles 1-7), y: 144-240 (tiles 9-15)
+        const chickenCount = Phaser.Math.Between(6, 8);
+        for (let i = 0; i < chickenCount; i++) {
+            const x = Phaser.Math.Between(32, 96);
+            const y = Phaser.Math.Between(160, 224);
+            
+            const chicken = this.physics.add.sprite(x, y, 'chicken', 0);
             chicken.setScale(1.5);
             chicken.play('chicken-idle');
             chicken.setDepth(100);
@@ -712,22 +961,87 @@ export class FarmScene extends Scene
             // Add health data to chicken
             chicken.setData('health', 3);
             chicken.setData('maxHealth', 3);
+            chicken.setData('fenceBounds', { minX: 32, maxX: 96, minY: 160, maxY: 224 });
             
             // Store chicken in array
             this.chickens.push(chicken);
 
-            // Collision with map layers will be handled in setupColliders()
-
-            // Make chicken walk randomly
+            // Make chicken walk randomly within fence
             const movementTimer = this.time.addEvent({
                 delay: Phaser.Math.Between(2000, 4000),
-                callback: () => this.moveChickenRandomly(chicken),
+                callback: () => this.moveAnimalRandomly(chicken, 'chicken'),
                 loop: true
             });
             
             // Store timer reference on chicken
             chicken.setData('movementTimer', movementTimer);
-        });
+        }
+    }
+
+    private createCows(): void
+    {
+        // Spawn 5-6 cows in the second fence (top-middle enclosure)
+        // Fence area: x: 144-240 (tiles 9-15), y: 144-240 (tiles 9-15)
+        const cowCount = Phaser.Math.Between(6, 8);
+        for (let i = 0; i < cowCount; i++) {
+            const x = Phaser.Math.Between(160, 224);
+            const y = Phaser.Math.Between(160, 224);
+            
+            const cow = this.physics.add.sprite(x, y, 'cow', 0);
+            cow.setScale(1.5);
+            cow.play('cow-idle');
+            cow.setDepth(100);
+            
+            // Add health data to cow
+            cow.setData('health', 5);
+            cow.setData('maxHealth', 5);
+            cow.setData('fenceBounds', { minX: 160, maxX: 224, minY: 160, maxY: 224 });
+            
+            // Store cow in array
+            this.cows.push(cow);
+
+            // Make cow walk randomly within fence
+            const movementTimer = this.time.addEvent({
+                delay: Phaser.Math.Between(2000, 4000),
+                callback: () => this.moveAnimalRandomly(cow, 'cow'),
+                loop: true
+            });
+            
+            cow.setData('movementTimer', movementTimer);
+        }
+    }
+
+    private createSheep(): void
+    {
+        // Spawn 5-6 sheep in the third fence (top-left lower enclosure)
+        // Fence area: x: 16-112 (tiles 1-7), y: 256-320 (tiles 16-20)
+        const sheepCount = Phaser.Math.Between(6, 8);
+        for (let i = 0; i < sheepCount; i++) {
+            const x = Phaser.Math.Between(32, 96);
+            const y = Phaser.Math.Between(272, 304);
+            
+            const sheep = this.physics.add.sprite(x, y, 'sheep', 0);
+            sheep.setScale(1.5);
+            sheep.play('sheep-idle');
+            sheep.setDepth(100);
+            
+            // Add health data to sheep
+            sheep.setData('health', 3);
+            sheep.setData('maxHealth', 3);
+            sheep.setData('fenceBounds', { minX: 32, maxX: 96, minY: 272, maxY: 304 });
+            
+            // Store sheep in array
+            this.sheep.push(sheep);
+
+            // Make sheep walk randomly within fence
+            const movementTimer = this.time.addEvent({
+                delay: Phaser.Math.Between(2000, 4000),
+                callback: () => this.moveAnimalRandomly(sheep, 'sheep'),
+                loop: true
+            });
+            
+            sheep.setData('movementTimer', movementTimer);
+        }
     }
 
     private createNPC(): void
@@ -754,7 +1068,8 @@ export class FarmScene extends Scene
         // Add name text above NPC
         const nameText = this.add.text(this.npc.x, this.npc.y - 25, 'herman', {
             fontSize: '10px',
-            color: '#ffffff'
+            color: '#ffffff',
+            resolution: 3
         });
         nameText.setOrigin(0.5);
         nameText.setDepth(10);
@@ -766,8 +1081,14 @@ export class FarmScene extends Scene
         this.setupNPCPatrol();
     }
 
-    private moveChickenRandomly(chicken: Phaser.Physics.Arcade.Sprite): void
+    private moveAnimalRandomly(animal: Phaser.Physics.Arcade.Sprite, animalType: 'chicken' | 'cow' | 'sheep'): void
     {
+        if (!animal || !animal.active) return;
+        
+        // Get fence bounds for this animal
+        const bounds = animal.getData('fenceBounds');
+        if (!bounds) return;
+        
         // Randomly decide to walk or idle
         const shouldWalk = Math.random() > 0.5;
         
@@ -775,20 +1096,27 @@ export class FarmScene extends Scene
             // Random direction
             const velocityX = Phaser.Math.Between(-50, 50);
             const velocityY = Phaser.Math.Between(-50, 50);
-            chicken.setVelocity(velocityX, velocityY);
-            chicken.play('chicken-walk', true);
+            animal.setVelocity(velocityX, velocityY);
+            animal.play(`${animalType}-walk`, true);
             
-            // Flip chicken based on direction
+            // Flip animal based on direction
             if (velocityX < 0) {
-                chicken.setFlipX(true);
+                animal.setFlipX(true);
             } else if (velocityX > 0) {
-                chicken.setFlipX(false);
+                animal.setFlipX(false);
             }
             
-            // Stop after a short time
+            // Stop after a short time and check bounds
             this.time.delayedCall(1000, () => {
-                chicken.setVelocity(0, 0);
-                chicken.play('chicken-idle', true);
+                if (animal && animal.active) {
+                    animal.setVelocity(0, 0);
+                    
+                    // Keep animal within fence bounds
+                    animal.x = Phaser.Math.Clamp(animal.x, bounds.minX, bounds.maxX);
+                    animal.y = Phaser.Math.Clamp(animal.y, bounds.minY, bounds.maxY);
+                    
+                    animal.play(`${animalType}-idle`, true);
+                }
             });
         }
     }
@@ -943,6 +1271,7 @@ export class FarmScene extends Scene
         this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         this.attackKey = this.input.keyboard!.addKey('Q');
         this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.cutKey = this.input.keyboard!.addKey('R');
         
         this.escKey.on('down', () => {
             if (this.isChatting) {
@@ -953,6 +1282,7 @@ export class FarmScene extends Scene
         });
         
         this.spaceKey.on('down', () => this.tryStartChat());
+        this.cutKey.on('down', () => this.tryCutTree());
         
         // Listen for keyboard input for chat
         this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
@@ -999,6 +1329,12 @@ export class FarmScene extends Scene
 
     private handlePlayerMovement(): void
     {
+        // Don't move if cutting
+        if (this.isCutting) {
+            this.player.setVelocity(0, 0);
+            return;
+        }
+        
         // Check if attack key is being held down
         if (this.attackKey.isDown) {
             this.handleAttack();
@@ -1035,7 +1371,7 @@ export class FarmScene extends Scene
         } else {
             this.player.setVelocity(0, 0);
         }
-
+    
         this.updatePlayerAnimation(isRunning);
     }
 
@@ -1100,12 +1436,9 @@ export class FarmScene extends Scene
         // Check for chickens in attack range
         this.checkAttackHit();
         
-        // Switch to attack texture
-        this.player.setTexture('player_attack', 0);
-        
-        // Play attack animation based on current direction (loop while holding)
+        // Play attack animation based on current direction (don't restart if already playing)
         const attackAnim = `attack-${this.currentDirection}`;
-        this.player.play(attackAnim, true);
+        this.player.play(attackAnim, false);
         
         // Listen for animation complete to loop or stop
         this.player.on('animationcomplete', this.onAttackComplete, this);
@@ -1114,6 +1447,7 @@ export class FarmScene extends Scene
     private checkAttackHit(): void {
         const attackRange = 50;
         
+        // Check chickens
         this.chickens.forEach(chicken => {
             if (!chicken.active) return;
             
@@ -1123,40 +1457,68 @@ export class FarmScene extends Scene
             );
             
             if (distance < attackRange) {
-                this.damageChicken(chicken);
+                this.damageAnimal(chicken, 'chicken');
+            }
+        });
+        
+        // Check cows
+        this.cows.forEach(cow => {
+            if (!cow.active) return;
+            
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x, this.player.y,
+                cow.x, cow.y
+            );
+            
+            if (distance < attackRange) {
+                this.damageAnimal(cow, 'cow');
+            }
+        });
+        
+        // Check sheep
+        this.sheep.forEach(sheepAnimal => {
+            if (!sheepAnimal.active) return;
+            
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x, this.player.y,
+                sheepAnimal.x, sheepAnimal.y
+            );
+            
+            if (distance < attackRange) {
+                this.damageAnimal(sheepAnimal, 'sheep');
             }
         });
     }
     
-    private damageChicken(chicken: Phaser.Physics.Arcade.Sprite): void {
-        const currentHealth = chicken.getData('health');
+    private damageAnimal(animal: Phaser.Physics.Arcade.Sprite, animalType: 'chicken' | 'cow' | 'sheep'): void {
+        const currentHealth = animal.getData('health');
         const newHealth = currentHealth - 1;
-        chicken.setData('health', newHealth);
+        animal.setData('health', newHealth);
         
         // Flash red when hit
-        chicken.setTint(0xff0000);
+        animal.setTint(0xff0000);
         this.time.delayedCall(200, () => {
-            chicken.clearTint();
+            animal.clearTint();
         });
         
         if (newHealth <= 0) {
-            // Chicken dies
-            chicken.setVelocity(0, 0);
-            chicken.setAlpha(0.5);
+            // Animal dies
+            animal.setVelocity(0, 0);
+            animal.setAlpha(0.5);
             
             // Cancel the movement timer to prevent callbacks on destroyed object
-            const movementTimer = chicken.getData('movementTimer');
+            const movementTimer = animal.getData('movementTimer');
             if (movementTimer) {
                 movementTimer.destroy();
             }
             
             // Fade out and destroy
             this.tweens.add({
-                targets: chicken,
+                targets: animal,
                 alpha: 0,
                 duration: 500,
                 onComplete: () => {
-                    chicken.destroy();
+                    animal.destroy();
                 }
             });
         }
@@ -1191,6 +1553,151 @@ export class FarmScene extends Scene
         if (distance < 80) {
             this.startChat();
         }
+    }
+
+    private tryCutTree(): void {
+        if (this.isCutting || this.isChatting) return;
+        
+        // Check if player is near a tree
+        const nearestTree = this.findNearestTree();
+        
+        if (nearestTree) {
+            this.cutTree(nearestTree);
+        }
+    }
+
+    private findNearestTree(): { x: number; y: number; direction: string; tile: Phaser.Tilemaps.Tile; layer: Phaser.Tilemaps.TilemapLayer } | null {
+        const checkRadius = 48; // Proximity radius to detect trees
+        const playerTileX = Math.floor(this.player.x / 16);
+        const playerTileY = Math.floor(this.player.y / 16);
+        
+        let nearestTree: { x: number; y: number; direction: string; tile: Phaser.Tilemaps.Tile; layer: Phaser.Tilemaps.TilemapLayer } | null = null;
+        let nearestDistance = Infinity;
+        
+        // Check all tree layers for nearby trees
+        this.treeLayers.forEach(layer => {
+            // Check tiles around the player
+            for (let dx = -3; dx <= 3; dx++) {
+                for (let dy = -3; dy <= 3; dy++) {
+                    const tileX = playerTileX + dx;
+                    const tileY = playerTileY + dy;
+                    const tile = layer.getTileAt(tileX, tileY);
+                    
+                    if (tile && tile.index !== -1) {
+                        const tileWorldX = tileX * 16 + 8;
+                        const tileWorldY = tileY * 16 + 8;
+                        const distance = Phaser.Math.Distance.Between(
+                            this.player.x, this.player.y,
+                            tileWorldX, tileWorldY
+                        );
+                        
+                        if (distance < checkRadius && distance < nearestDistance) {
+                            nearestDistance = distance;
+                            
+                            // Determine direction to face the tree
+                            const deltaX = tileWorldX - this.player.x;
+                            const deltaY = tileWorldY - this.player.y;
+                            
+                            let direction = 'down';
+                            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                                direction = deltaX > 0 ? 'right' : 'left';
+                            } else {
+                                direction = deltaY > 0 ? 'down' : 'up';
+                            }
+                            
+                            nearestTree = { x: tileWorldX, y: tileWorldY, direction, tile, layer };
+                        }
+                    }
+                }
+            }
+        });
+        
+        return nearestTree;
+    }
+
+    private cutTree(tree: { x: number; y: number; direction: string; tile: Phaser.Tilemaps.Tile; layer: Phaser.Tilemaps.TilemapLayer }): void {
+        this.isCutting = true;
+        this.player.setVelocity(0, 0);
+        
+        // Face the tree
+        this.currentDirection = tree.direction;
+        
+        // Get or initialize hit count for this tree group
+        // We'll track the entire tree by storing data on the tile we're hitting
+        let hitCount = tree.tile.properties.hitCount || 0;
+        hitCount++;
+        
+        // Store hit count
+        tree.tile.properties.hitCount = hitCount;
+        
+        // Switch to player_actions texture and play cutting animation
+        this.player.setTexture('player_actions', 0);
+        const cutAnim = `cut-tree-${tree.direction}`;
+        this.player.play(cutAnim, false);
+        
+        // Listen for animation complete
+        this.player.once('animationcomplete', () => {
+            this.isCutting = false;
+            this.player.setTexture('player', 0);
+            this.player.play(`idle-${this.currentDirection}`, true);
+            
+            // Check if tree should be removed
+            if (hitCount >= 5) {
+                // Remove all connected tiles that form this tree
+                this.removeConnectedTreeTiles(tree.tile, tree.layer);
+            }
+        });
+    }
+
+    private removeConnectedTreeTiles(startTile: Phaser.Tilemaps.Tile, layer: Phaser.Tilemaps.TilemapLayer): void {
+        const tilesToRemove: Set<string> = new Set();
+        const toCheck: Phaser.Tilemaps.Tile[] = [startTile];
+        const checked: Set<string> = new Set();
+        
+        // Flood fill to find all connected tiles
+        while (toCheck.length > 0) {
+            const tile = toCheck.pop()!;
+            const key = `${tile.x}_${tile.y}`;
+            
+            if (checked.has(key)) continue;
+            checked.add(key);
+            
+            if (tile && tile.index !== -1) {
+                tilesToRemove.add(key);
+                
+                // Check all 8 adjacent tiles (including diagonals for tree canopy)
+                const directions = [
+                    [-1, -1], [0, -1], [1, -1],
+                    [-1,  0],          [1,  0],
+                    [-1,  1], [0,  1], [1,  1]
+                ];
+                
+                directions.forEach(([dx, dy]) => {
+                    const adjacentTile = layer.getTileAt(tile.x + dx, tile.y + dy);
+                    if (adjacentTile && adjacentTile.index !== -1 && !checked.has(`${adjacentTile.x}_${adjacentTile.y}`)) {
+                        toCheck.push(adjacentTile);
+                    }
+                });
+            }
+        }
+        
+        // Remove all tiles in the tree and their collision bodies
+        tilesToRemove.forEach(key => {
+            const [x, y] = key.split('_').map(Number);
+            layer.removeTileAt(x, y);
+            
+            // Remove associated collision bodies
+            const collisionKey = `${x}_${y}_${layer.layer.name}`;
+            const bodies = this.tileCollisionBodies.get(collisionKey);
+            if (bodies) {
+                bodies.forEach(body => {
+                    if (body && body.active) {
+                        body.destroy();
+                    }
+                });
+                this.tileCollisionBodies.delete(collisionKey);
+            }
+        });
     }
 
     private startChat(): void {
@@ -1236,7 +1743,8 @@ export class FarmScene extends Scene
             {
                 fontSize: '10px',
                 color: '#000000',
-                wordWrap: { width: 120 }
+                wordWrap: { width: 120 },
+                resolution: 3
             }
         );
         this.chatText.setOrigin(0.5, 0.5);
@@ -1261,7 +1769,8 @@ export class FarmScene extends Scene
                 fontSize: '10px',
                 color: '#000000',
                 fontStyle: 'bold',
-                wordWrap: { width: 120 }
+                wordWrap: { width: 120 },
+                resolution: 3
             }
         );
         this.npcResponse.setOrigin(0.5, 0.5);
