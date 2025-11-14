@@ -194,7 +194,7 @@ export class UIScene extends Phaser.Scene {
         this.updateSelection();
     }
 
-    private updatePosition(): void {
+    public updatePosition(): void {
         const x = this.cameras.main.centerX;
         const y = this.cameras.main.height - 60; // Position at bottom of screen
         this.itemBarContainer.setPosition(x, y);
@@ -202,8 +202,8 @@ export class UIScene extends Phaser.Scene {
 
     private handleResize = (): void => {
         if (!this.scene.settings.active) return;
-        this.updatePosition();
         this.itemBarContainer.setVisible(true);
+        this.updatePosition();
     }
 
     private setupInput(): void {

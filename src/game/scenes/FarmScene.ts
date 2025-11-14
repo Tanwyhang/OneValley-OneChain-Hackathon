@@ -1347,9 +1347,14 @@ export class FarmScene extends Scene {
         this.updateCameraZoom();
 
         // Update UI scene on resize
-        const uiScene = this.scene.get(SCENE_KEYS.UI);
-        if (uiScene && uiScene.scene) {
-            uiScene.scene.restart();
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+        if (uiScene) {
+            // Trigger the UI scene's own resize handler
+            if (uiScene.scene && typeof (uiScene as any).handleResize === 'function') {
+                (uiScene as any).handleResize();
+            }
+            // Also update position directly to ensure it's in the right place
+            uiScene.updatePosition();
         }
 
         // Debug log
