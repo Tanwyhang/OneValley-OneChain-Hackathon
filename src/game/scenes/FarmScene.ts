@@ -82,7 +82,6 @@ export class FarmScene extends Scene {
     preload() {
         console.log('Starting to load assets...');
         this.load.setPath('assets');
-        
 
         // Load tileset and farm map
         this.load.image('tileset', 'tilesets/OneValley.png');
@@ -142,9 +141,16 @@ export class FarmScene extends Scene {
         // Load particle image
         this.load.image('firefly', 'firefly.png');
 
+        this.load.setPath('assets/items');
+        this.load.image('potion_01a', 'consumables/potion_01a.png');
+        this.load.image('fish_01a', 'consumables/fish_01a.png');
+        this.load.image('candy_01a', 'consumables/candy_01a.png');
+        this.load.image('helmet_01a', 'armors/helmet_01a.png');
+
         // Load UI assets
         this.load.setPath('assets/ui');
         this.load.image('slot', 'slot.png');
+        this.load.image('selected-slot', 'selected-slot.png');
         this.load.image('itembar', 'itembar.png');
         this.load.image('backpack', 'backpack.png');
         this.load.image('marketplace', 'marketplace.png');
@@ -203,8 +209,17 @@ export class FarmScene extends Scene {
         this.time.delayedCall(1000, () => {
             const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
             if (uiScene) {
-                uiScene.addItem('coin', 0);
-                uiScene.addItem('seed', 1);
+                // Add test items to the item bar
+                uiScene.addItem('potion_01a', 0, 'potion');
+                uiScene.addItem('fish_01a', 1, 'food');
+                uiScene.addItem('candy_01a', 2, 'candy');
+                uiScene.addItem('helmet_01a', 3, 'helmet');
+
+                // Add some empty slots with just numbers
+                for (let i = 4; i < 8; i++) {
+                    // These will show just the slot numbers
+                }
+
                 // Show the UI after adding items
                 uiScene.showUI();
             }
@@ -1382,10 +1397,10 @@ export class FarmScene extends Scene {
             return;
         }
 
-        const left = this.cursors.left.isDown || this.wasd.left.isDown;
-        const right = this.cursors.right.isDown || this.wasd.right.isDown;
-        const up = this.cursors.up.isDown || this.wasd.up.isDown;
-        const down = this.cursors.down.isDown || this.wasd.down.isDown;
+        const left = this.wasd.left.isDown;
+        const right = this.wasd.right.isDown;
+        const up = this.wasd.up.isDown;
+        const down = this.wasd.down.isDown;
         const isRunning = this.shiftKey.isDown;
         const speed = isRunning ? this.playerRunSpeed : this.playerSpeed;
 
@@ -1908,5 +1923,20 @@ export class FarmScene extends Scene {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
         this.windTimer.destroy();
+    }
+
+    // In FarmScene class
+    public addItemToInventory(itemId: string, itemType: string): void {
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+        if (!uiScene) return;
+
+        // Find first empty slot or implement your own logic
+        for (let i = 0; i < 8; i++) {
+            const slot = uiScene.getSlot(i); // You'll need to add this getter to UIScene
+            if (!slot?.itemId) {
+                uiScene.addItem(itemId, i, itemType);
+                break;
+            }
+        }
     }
 }
