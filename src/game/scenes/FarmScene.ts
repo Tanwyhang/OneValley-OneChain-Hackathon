@@ -75,6 +75,10 @@ export class FarmScene extends Scene {
     private settingsModal!: Phaser.GameObjects.Container;
     private isNearNPC: boolean = false;
 
+    // Marketplace
+    private marketplaceIcon!: Phaser.GameObjects.Image;
+    private isNearMarketplace: boolean = false;
+
     constructor() {
         super('FarmScene');
     }
@@ -153,7 +157,27 @@ export class FarmScene extends Scene {
         this.load.image('selected-slot', 'selected-slot.png');
         this.load.image('itembar', 'itembar.png');
         this.load.image('backpack', 'backpack.png');
-        this.load.image('marketplace', 'marketplace.png');
+        this.load.image('marketplace', 'marketplace-with-character.png');
+        
+        // Marketplace category buttons (default)
+        this.load.image('btn-weapons', 'top-button-Weapons.png');
+        this.load.image('btn-armors', 'top-button-Armors.png');
+        this.load.image('btn-misc', 'top-button-Misc.png');
+        this.load.image('btn-consumables', 'top-button-Consumables.png');
+        
+        // Marketplace category buttons (selected)
+        this.load.image('btn-weapons-selected', 'selected-top-button-Weapons.png');
+        this.load.image('btn-armors-selected', 'selected-top-button-Armors.png');
+        this.load.image('btn-misc-selected', 'selected-top-button-Misc.png');
+        this.load.image('btn-consumables-selected', 'selected-top-button-Consumables.png');
+        
+        // Buy/Sell buttons
+        this.load.image('buy-button', 'buy-button.png');
+        this.load.image('sell-button', 'sell-button.png');
+        
+        // Settings button
+        this.load.image('settings-button', 'settings-button.png');
+        
         this.load.setPath('assets');
 
         // Debug: Log when assets are loaded
@@ -237,6 +261,7 @@ export class FarmScene extends Scene {
         this.updateNPCNamePosition();
         this.updateChatBubblePosition();
         this.checkNPCProximity();
+        this.checkMarketplaceProximity();
     }
 
 
@@ -364,6 +389,86 @@ export class FarmScene extends Scene {
     private closeSettingsModal(): void {
         if (this.settingsModal) {
             this.settingsModal.setVisible(false);
+        }
+    }
+
+    // ===== MARKETPLACE METHODS =====
+
+    private checkMarketplaceProximity(): void {
+        if (!this.player) return;
+
+        // Marketplace location (center of market building)
+        const marketplaceX = 696;
+        const marketplaceY = 320;
+
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            marketplaceX, marketplaceY
+        );
+
+        const proximityRange = 100;
+
+        if (distance < proximityRange && !this.isNearMarketplace) {
+            this.isNearMarketplace = true;
+            this.showMarketplaceIcon();
+        } else if (distance >= proximityRange && this.isNearMarketplace) {
+            this.isNearMarketplace = false;
+            this.hideMarketplaceIcon();
+        }
+    }
+
+    private showMarketplaceIcon(): void {
+        if (!this.marketplaceIcon) {
+            this.createMarketplaceIcon();
+        }
+        this.marketplaceIcon.setVisible(true);
+    }
+
+    private hideMarketplaceIcon(): void {
+        if (this.marketplaceIcon) {
+            this.marketplaceIcon.setVisible(false);
+        }
+    }
+
+    private createMarketplaceIcon(): void {
+        // Create marketplace icon above the building
+        this.marketplaceIcon = this.add.image(696, 280, 'marketplace');
+        this.marketplaceIcon.setScale(0.15); // Scale down the marketplace image
+        this.marketplaceIcon.setDepth(2000);
+        this.marketplaceIcon.setInteractive();
+        this.marketplaceIcon.setVisible(false);
+
+        // Click handler
+        this.marketplaceIcon.on('pointerdown', () => {
+            this.openMarketplace();
+        });
+
+        // Hover effects
+        this.marketplaceIcon.on('pointerover', () => {
+            this.marketplaceIcon.setScale(0.17);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        this.marketplaceIcon.on('pointerout', () => {
+            this.marketplaceIcon.setScale(0.15);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        // Add bounce animation
+        this.tweens.add({
+            targets: this.marketplaceIcon,
+            y: 270,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    private openMarketplace(): void {
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+        if (uiScene) {
+            uiScene.showMarketplace();
         }
     }
 
@@ -1315,6 +1420,12 @@ export class FarmScene extends Scene {
             if (this.isChatting) {
                 this.endChat();
             } else {
+                // Check if any UI is open before allowing exit
+                const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
+                if (uiScene && (uiScene.isMarketplaceOpen() || uiScene.isBackpackOpen())) {
+                    // Don't exit, let UIScene handle ESC
+                    return;
+                }
                 this.exitFarm();
             }
         });
@@ -1385,6 +1496,13 @@ export class FarmScene extends Scene {
     }
 
     private handlePlayerMovement(): void {
+        // Disable movement if marketplace or backpack is open
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
+        if (uiScene && (uiScene.isMarketplaceOpen() || uiScene.isBackpackOpen())) {
+            this.player.setVelocity(0, 0);
+            return;
+        }
+
         // Don't move if cutting
         if (this.isCutting) {
             this.player.setVelocity(0, 0);

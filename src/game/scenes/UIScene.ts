@@ -34,6 +34,23 @@ export class UIScene extends Phaser.Scene {
     private backpackKey!: Phaser.Input.Keyboard.Key;
     private backpackOverlay!: Phaser.GameObjects.Rectangle;
 
+    // Drag and drop properties
+    private draggedItem: { itemId: string; itemType?: string; count?: number; sourceSlot: Slot; sourceIndex: number; sourceType: 'itembar' | 'backpack' } | null = null;
+    private dragGhost?: Phaser.GameObjects.Image;
+
+    // Marketplace properties
+    private marketplaceContainer!: Phaser.GameObjects.Container;
+    private marketplaceBg!: Phaser.GameObjects.Image;
+    private marketplaceVisible: boolean = false;
+    private marketplaceSlots: Slot[] = [];
+    private marketplaceButtons: Phaser.GameObjects.Image[] = [];
+    private selectedCategory: 'Weapons' | 'Armors' | 'Misc' | 'Consumables' = 'Weapons';
+    private marketplaceOverlay!: Phaser.GameObjects.Rectangle;
+    private readonly MARKETPLACE_SLOT_COUNT = 30; // 5x6
+    private readonly MARKETPLACE_COLS = 5;
+    private readonly MARKETPLACE_ROWS = 6;
+    private marketplaceCreated: boolean = false;
+
     constructor() {
         super({
             key: SCENE_KEYS.UI,
@@ -42,6 +59,16 @@ export class UIScene extends Phaser.Scene {
     }
 
     public create(): void {
+        // Set custom cursor with larger size
+        this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+
+        // Reset marketplace state
+        this.marketplaceCreated = false;
+        this.marketplaceButtons = [];
+        this.marketplaceSlots = [];
+        this.backpackSlots = [];
+        this.slots = [];
+
         // Create main HUD container with high depth
         this.#hudContainer = this.add.container(0, 0).setDepth(10000);
         this.#hearts = [];
@@ -57,6 +84,7 @@ export class UIScene extends Phaser.Scene {
         this.events.once('shutdown', () => {
             this.scale.off('resize', this.handleResize, this);
             this.cleanupKeyHandlers();
+            this.input.off('pointermove', this.onDragMove, this);
             this.#hudContainer.destroy(true);
         });
 
@@ -72,6 +100,12 @@ export class UIScene extends Phaser.Scene {
 
         // Create backpack (hidden by default)
         this.createBackpack();
+
+        // Create marketplace (hidden by default)
+        this.createMarketplace();
+
+        // Create settings button at top right
+        this.createSettingsButton();
     }
 
     public showUI(): void {
@@ -126,11 +160,15 @@ export class UIScene extends Phaser.Scene {
 
             this.itemBarContainer.add(slotBg);
 
-            this.slots.push({
+            const slot: Slot = {
                 bg: slotBg,
                 x: x,
                 y: 0
-            });
+            };
+            this.slots.push(slot);
+
+            // Make slot interactive for drag and drop
+            this.makeSlotInteractive(slotBg, i, 'itembar');
         }
 
         // Create selection indicator last so it's above slots
@@ -290,7 +328,28 @@ export class UIScene extends Phaser.Scene {
         this.backpackKey.on('down', () => {
             const farmScene = this.scene.get(SCENE_KEYS.FARM);
             if (farmScene && farmScene.scene.isActive()) {
-                this.toggleBackpack();
+                if (this.backpackVisible) {
+                    this.hideBackpack();
+                } else if (this.marketplaceVisible) {
+                    this.marketplaceContainer.setVisible(false);
+                    this.showBackpack();
+                } else {
+                    this.showBackpack();
+                }
+            }
+        });
+
+        // Add 'ESC' key to close marketplace/backpack
+        const escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+        escKey.on('down', () => {
+            if (this.backpackVisible) {
+                this.hideBackpack();
+                // If marketplace was open before, show it back
+                if (this.marketplaceVisible) {
+                    this.marketplaceContainer.setVisible(true);
+                }
+            } else if (this.marketplaceVisible) {
+                this.hideMarketplace();
             }
         });
     }
@@ -409,13 +468,202 @@ export class UIScene extends Phaser.Scene {
 
                 this.backpackContainer.add(slotBg);
 
-                this.backpackSlots.push({
+                const slot: Slot = {
                     bg: slotBg,
                     x: x,
                     y: y
-                });
+                };
+                this.backpackSlots.push(slot);
+
+                // Make slot interactive for drag and drop
+                this.makeSlotInteractive(slotBg, row * cols + col, 'backpack');
             }
         }
+    }
+
+    // ===== DRAG AND DROP METHODS =====
+
+    private makeSlotInteractive(slotBg: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        slotBg.setInteractive({ draggable: false });
+
+        slotBg.on('pointerover', () => {
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        slotBg.on('pointerout', () => {
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        slotBg.on('pointerdown', () => {
+            if (this.draggedItem) return; // Prevent starting new drag while dragging
+            const slot = slotType === 'itembar' ? this.slots[slotIndex] : this.backpackSlots[slotIndex];
+            if (slot && slot.itemId) {
+                this.startDrag(slot, slotIndex, slotType);
+            }
+        });
+
+        slotBg.on('pointerup', () => {
+            if (this.draggedItem) {
+                const targetSlot = slotType === 'itembar' ? this.slots[slotIndex] : this.backpackSlots[slotIndex];
+                this.onDrop(targetSlot, slotIndex, slotType);
+            }
+        });
+    }
+
+    private startDrag(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        if (!slot.itemId || !slot.itemImage) return;
+
+        this.draggedItem = {
+            itemId: slot.itemId,
+            itemType: slot.itemType,
+            count: slot.countText ? parseInt(slot.countText.text) : 1,
+            sourceSlot: slot,
+            sourceIndex: slotIndex,
+            sourceType: slotType
+        };
+
+        // Change cursor to grab
+        this.input.setDefaultCursor('url(assets/ui/cursor-grab.png) 16 16, grab');
+
+        // Create ghost image
+        this.dragGhost = this.add.image(slot.itemImage.x, slot.itemImage.y, slot.itemId)
+            .setDisplaySize(32, 32)
+            .setAlpha(0.7)
+            .setDepth(30000);
+
+        // Hide original item
+        slot.itemImage.setVisible(false);
+        if (slot.countText) slot.countText.setVisible(false);
+
+        // Follow pointer
+        this.input.on('pointermove', this.onDragMove, this);
+    }
+
+    private onDragMove(pointer: Phaser.Input.Pointer): void {
+        if (this.dragGhost) {
+            this.dragGhost.setPosition(pointer.x, pointer.y);
+        }
+    }
+
+    private onDrop(targetSlot: Slot, targetIndex: number, targetType: 'itembar' | 'backpack'): void {
+        if (!this.draggedItem) return;
+
+        const sourceSlot = this.draggedItem.sourceSlot;
+        const sourceIndex = this.draggedItem.sourceIndex;
+        const sourceType = this.draggedItem.sourceType;
+
+        // Swap items
+        this.swapItems(sourceSlot, sourceIndex, sourceType, targetSlot, targetIndex, targetType);
+
+        // Cleanup
+        this.endDrag();
+    }
+
+    private swapItems(fromSlot: Slot, fromIndex: number, fromType: 'itembar' | 'backpack', toSlot: Slot, toIndex: number, toType: 'itembar' | 'backpack'): void {
+        // Store target slot data
+        const targetItemId = toSlot.itemId;
+        const targetItemType = toSlot.itemType;
+        const targetCount = toSlot.countText ? parseInt(toSlot.countText.text) : 1;
+
+        // Move source item to target
+        if (toType === 'itembar') {
+            this.addItem(fromSlot.itemId!, toIndex, fromSlot.itemType, this.draggedItem!.count);
+        } else {
+            this.addItemToBackpack(fromSlot.itemId!, toIndex, fromSlot.itemType, this.draggedItem!.count);
+        }
+
+        // Move target item to source (if exists)
+        if (targetItemId) {
+            if (fromType === 'itembar') {
+                this.addItem(targetItemId, fromIndex, targetItemType, targetCount);
+            } else {
+                this.addItemToBackpack(targetItemId, fromIndex, targetItemType, targetCount);
+            }
+        } else {
+            // Clear source slot if target was empty
+            this.clearSlot(fromIndex, fromType);
+        }
+    }
+
+    private endDrag(): void {
+        if (this.dragGhost) {
+            this.dragGhost.destroy();
+            this.dragGhost = undefined;
+        }
+
+        // Reset cursor
+        this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+
+        this.input.off('pointermove', this.onDragMove, this);
+        this.draggedItem = null;
+    }
+
+    private clearSlot(slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        const slot = slotType === 'itembar' ? this.slots[slotIndex] : this.backpackSlots[slotIndex];
+        if (!slot) return;
+
+        if (slot.itemImage) {
+            slot.itemImage.destroy();
+            slot.itemImage = undefined;
+        }
+        if (slot.countText) {
+            slot.countText.destroy();
+            slot.countText = undefined;
+        }
+        slot.itemId = undefined;
+        slot.itemType = undefined;
+    }
+
+    public addItemToBackpack(itemId: string, slotIndex: number, itemType: string = 'item', count: number = 1): void {
+        if (slotIndex < 0 || slotIndex >= this.BACKPACK_SLOT_COUNT) {
+            console.warn(`Invalid backpack slot index: ${slotIndex}`);
+            return;
+        }
+
+        const slot = this.backpackSlots[slotIndex];
+        if (!slot) return;
+
+        // Remove existing item if any
+        if (slot.itemImage) slot.itemImage.destroy();
+        if (slot.countText) slot.countText.destroy();
+
+        // Add item image
+        if (this.textures.exists(itemId)) {
+            slot.itemImage = this.add.image(slot.x, slot.y, itemId)
+                .setDisplaySize(32, 32)
+                .setOrigin(0.5, 0.5)
+                .setDepth(1000 + slotIndex);
+            this.backpackContainer.add(slot.itemImage);
+        } else {
+            console.warn(`Texture not found: ${itemId}`);
+            slot.itemImage = this.add.rectangle(slot.x, slot.y, 32, 32, 0xff0000)
+                .setOrigin(0.5, 0.5)
+                .setDepth(1000 + slotIndex);
+            this.backpackContainer.add(slot.itemImage);
+        }
+
+        // Add item count if more than 1
+        if (count > 1) {
+            slot.countText = this.add.text(
+                slot.x + 10,
+                slot.y + 10,
+                count.toString(),
+                {
+                    fontSize: '14px',
+                    color: '#ffffff',
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    padding: { x: 2, y: 1 }
+                }
+            ).setOrigin(1, 1)
+                .setDepth(1001 + slotIndex);
+            this.backpackContainer.add(slot.countText);
+        }
+
+        // Store item data
+        slot.itemId = itemId;
+        slot.itemType = itemType;
+
+        this.children.sort('depth');
     }
 
     public toggleBackpack(): void {
@@ -434,5 +682,401 @@ export class UIScene extends Phaser.Scene {
         this.backpackVisible = false;
         this.backpackContainer.setVisible(false);
         this.backpackOverlay.setVisible(false);
+        
+        // If marketplace was open, show it back
+        if (this.marketplaceVisible) {
+            this.marketplaceContainer.setVisible(true);
+        }
+    }
+
+    // ===== MARKETPLACE METHODS =====
+
+    private createMarketplace(): void {
+        if (this.marketplaceCreated) return;
+        this.marketplaceCreated = true;
+
+        // Create marketplace container (centered on screen)
+        this.marketplaceContainer = this.add.container(0, 0);
+        this.marketplaceContainer.setScrollFactor(0);
+        this.marketplaceContainer.setDepth(15000); // Below item bar (25000)
+        this.marketplaceContainer.setVisible(false);
+
+        // Add grey overlay
+        this.marketplaceOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width * 2,
+            this.cameras.main.height * 2,
+            0x000000,
+            0.7
+        );
+        this.marketplaceOverlay.setOrigin(0.5);
+        this.marketplaceOverlay.setDepth(50);
+        this.marketplaceOverlay.setScrollFactor(0);
+        this.marketplaceOverlay.setVisible(false);
+
+        // ADJUST MARKETPLACE IMAGE SCALE HERE
+        const marketplaceScale = 1.5; // Change this value to scale marketplace
+
+        // Add marketplace background image
+        if (!this.textures.exists('marketplace')) {
+            console.error('Marketplace texture not found!');
+            return;
+        }
+
+        this.marketplaceBg = this.add.image(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            'marketplace'
+        );
+        this.marketplaceBg.setOrigin(0.5);
+        this.marketplaceBg.setScale(marketplaceScale);
+        this.marketplaceBg.setDepth(100);
+        this.marketplaceContainer.add(this.marketplaceBg);
+
+        // Create category buttons
+        this.createMarketplaceButtons(marketplaceScale);
+
+        // Create slot grid
+        this.createMarketplaceSlots(marketplaceScale);
+
+        // Create close button
+        this.createMarketplaceCloseButton(marketplaceScale);
+
+        // Create buy/sell buttons
+        this.createMarketplaceBuyButton(marketplaceScale);
+        this.createMarketplaceSellButton();
+
+        // Add to HUD container
+        this.#hudContainer.add(this.marketplaceContainer);
+    }
+
+    private createMarketplaceButtons(marketplaceScale: number): void {
+        const categories = [
+            { name: 'Weapons', x: 113, y: 1, width: 48, height: 32 },
+            { name: 'Armors', x: 161, y: 1, width: 48, height: 32 },
+            { name: 'Misc', x: 209, y: 1, width: 48, height: 32 },
+            { name: 'Consumables', x: 257, y: 1, width: 96, height: 32 }
+        ];
+
+        // Get marketplace frame dimensions
+        const frameCenterX = this.cameras.main.centerX;
+        const frameCenterY = this.cameras.main.centerY;
+        const frameWidth = this.marketplaceBg.width * marketplaceScale;
+        const frameHeight = this.marketplaceBg.height * marketplaceScale;
+
+        categories.forEach((cat, index) => {
+            // Convert relative position to absolute
+            const absoluteX = frameCenterX - (frameWidth / 2) + (cat.x * marketplaceScale) + (cat.width * marketplaceScale / 2);
+            const absoluteY = frameCenterY - (frameHeight / 2) + (cat.y * marketplaceScale) + (cat.height * marketplaceScale / 2);
+
+            // Create button
+            const catName = cat.name.toLowerCase();
+            const button = this.add.image(absoluteX, absoluteY, `btn-${catName}`);
+            button.setOrigin(0.5);
+            button.setScale(marketplaceScale);
+            button.setInteractive({ useHandCursor: true });
+            button.setDepth(200);
+
+            // Click handler
+            button.on('pointerdown', () => this.selectCategory(cat.name as any, index));
+
+            // Hover effects
+            button.on('pointerover', () => {
+                if (this.selectedCategory !== cat.name) {
+                    button.setScale(marketplaceScale * 1.05);
+                }
+                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+            });
+            button.on('pointerout', () => {
+                button.setScale(marketplaceScale);
+                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+            });
+
+            this.marketplaceButtons.push(button);
+            this.marketplaceContainer.add(button);
+        });
+
+        // Select first button (Weapons) by default
+        this.selectedCategory = 'Weapons';
+        if (this.marketplaceButtons.length > 0 && this.marketplaceButtons[0] && this.marketplaceButtons[0].active) {
+            this.marketplaceButtons[0].setTexture('btn-weapons-selected');
+        }
+        this.loadMarketplaceItems('Weapons');
+    }
+
+    private createMarketplaceSlots(marketplaceScale: number): void {
+        const startX = 113;
+        const startY = 33;
+        const slotSize = 48;
+
+        // Get marketplace frame dimensions
+        const frameCenterX = this.cameras.main.centerX;
+        const frameCenterY = this.cameras.main.centerY;
+        const frameWidth = this.marketplaceBg.width * marketplaceScale;
+        const frameHeight = this.marketplaceBg.height * marketplaceScale;
+
+        for (let row = 0; row < this.MARKETPLACE_ROWS; row++) {
+            for (let col = 0; col < this.MARKETPLACE_COLS; col++) {
+                const relativeX = startX + (col * slotSize);
+                const relativeY = startY + (row * slotSize);
+
+                const absoluteX = frameCenterX - (frameWidth / 2) + (relativeX * marketplaceScale) + (slotSize * marketplaceScale / 2);
+                const absoluteY = frameCenterY - (frameHeight / 2) + (relativeY * marketplaceScale) + (slotSize * marketplaceScale / 2);
+
+                // Create slot
+                const slotBg = this.add.image(absoluteX, absoluteY, 'slot');
+                slotBg.setOrigin(0.5);
+                slotBg.setScale(marketplaceScale);
+                slotBg.setDepth(200);
+
+                const slot: Slot = { bg: slotBg, x: absoluteX, y: absoluteY };
+                this.marketplaceSlots.push(slot);
+                this.marketplaceContainer.add(slotBg);
+
+                // Make interactive (for buy/sell)
+                slotBg.setInteractive();
+                slotBg.on('pointerover', () => {
+                    this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+                });
+                slotBg.on('pointerout', () => {
+                    this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+                });
+                slotBg.on('pointerdown', () => this.handleMarketplaceSlotClick(row * this.MARKETPLACE_COLS + col));
+            }
+        }
+    }
+
+    private selectCategory(category: 'Weapons' | 'Armors' | 'Misc' | 'Consumables', index: number): void {
+        this.selectedCategory = category;
+
+        // Update button visuals
+        const categoryNames = ['weapons', 'armors', 'misc', 'consumables'];
+        this.marketplaceButtons.forEach((btn, i) => {
+            const catName = categoryNames[i];
+            if (i === index) {
+                btn.setTexture(`btn-${catName}-selected`);
+            } else {
+                btn.setTexture(`btn-${catName}`);
+            }
+        });
+
+        // Load items for selected category (placeholder for now)
+        this.loadMarketplaceItems(category);
+    }
+
+    private createMarketplaceCloseButton(marketplaceScale: number): void {
+        // Get marketplace frame dimensions
+        const frameCenterX = this.cameras.main.centerX;
+        const frameCenterY = this.cameras.main.centerY;
+        const frameWidth = this.marketplaceBg.width * marketplaceScale;
+        const frameHeight = this.marketplaceBg.height * marketplaceScale;
+
+        // ADJUST CLOSE BUTTON POSITION HERE
+        const closeOffsetX = -10; // Increase to move left, decrease to move right
+        const closeOffsetY = 16; // Increase to move down, decrease to move up
+        
+        // Position close button at top-right corner
+        const closeX = frameCenterX + (frameWidth / 2) - (closeOffsetX * marketplaceScale);
+        const closeY = frameCenterY - (frameHeight / 2) + (closeOffsetY * marketplaceScale);
+
+        const closeButton = this.add.text(closeX, closeY, 'X', {
+            fontSize: `${24 * marketplaceScale}px`,
+            color: '#ff0000',
+            fontStyle: 'bold'
+        });
+        closeButton.setOrigin(0.5);
+        closeButton.setDepth(300);
+        closeButton.setInteractive({ useHandCursor: true });
+
+        closeButton.on('pointerdown', () => {
+            this.hideMarketplace();
+        });
+
+        closeButton.on('pointerover', () => {
+            closeButton.setScale(1.2);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        closeButton.on('pointerout', () => {
+            closeButton.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        this.marketplaceContainer.add(closeButton);
+    }
+
+    private createMarketplaceBuyButton(marketplaceScale: number): void {
+        // Get marketplace frame dimensions
+        const frameCenterX = this.cameras.main.centerX;
+        const frameCenterY = this.cameras.main.centerY;
+        const frameWidth = this.marketplaceBg.width * marketplaceScale;
+        const frameHeight = this.marketplaceBg.height * marketplaceScale;
+
+        // Buy button position (19, 280) from marketplace frame origin
+        const buyX = frameCenterX - (frameWidth / 2) + (19 * marketplaceScale);
+        const buyY = frameCenterY - (frameHeight / 2) + (280 * marketplaceScale);
+
+        const buyButton = this.add.image(buyX, buyY, 'buy-button');
+        buyButton.setOrigin(0, 0);
+        buyButton.setScale(marketplaceScale);
+        buyButton.setDepth(300);
+        buyButton.setInteractive({ useHandCursor: true });
+
+        buyButton.on('pointerdown', () => {
+            console.log('Buy button clicked');
+            // TODO: Implement buy logic
+        });
+
+        buyButton.on('pointerover', () => {
+            buyButton.setScale(marketplaceScale * 1.1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        buyButton.on('pointerout', () => {
+            buyButton.setScale(marketplaceScale);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        this.marketplaceContainer.add(buyButton);
+    }
+
+    private createMarketplaceSellButton(): void {
+        // Position after item bar (to the right)
+        const itemBarX = this.cameras.main.centerX;
+        const itemBarY = this.cameras.main.height - 60;
+        
+        // Calculate item bar width (8 slots * 48px + 7 gaps * 6px)
+        const slotSize = 48;
+        const spacing = 6;
+        const itemBarWidth = (this.SLOT_COUNT * (slotSize + spacing)) - spacing;
+        
+        const sellX = itemBarX + (itemBarWidth / 2) + 20;
+        const sellY = itemBarY;
+
+        const sellButton = this.add.image(sellX, sellY, 'sell-button');
+        sellButton.setOrigin(0, 0.5);
+        sellButton.setDepth(26000); // Above item bar
+        sellButton.setScrollFactor(0);
+        sellButton.setInteractive({ useHandCursor: true });
+        sellButton.setVisible(false); // Hidden by default, show when marketplace opens
+
+        sellButton.on('pointerdown', () => {
+            console.log('Sell button clicked');
+            // TODO: Implement sell logic
+        });
+
+        sellButton.on('pointerover', () => {
+            sellButton.setScale(1.1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        sellButton.on('pointerout', () => {
+            sellButton.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        this.#hudContainer.add(sellButton);
+        
+        // Store reference for show/hide
+        this.marketplaceContainer.setData('sellButton', sellButton);
+    }
+
+    private loadMarketplaceItems(category: string): void {
+        // Clear existing items
+        this.marketplaceSlots.forEach(slot => {
+            if (slot.itemImage) {
+                slot.itemImage.destroy();
+                slot.itemImage = undefined;
+            }
+            if (slot.countText) {
+                slot.countText.destroy();
+                slot.countText = undefined;
+            }
+            slot.itemId = undefined;
+            slot.itemType = undefined;
+        });
+
+        // TODO: Load items based on category
+        console.log(`Loading items for category: ${category}`);
+    }
+
+    private handleMarketplaceSlotClick(slotIndex: number): void {
+        const slot = this.marketplaceSlots[slotIndex];
+        if (slot && slot.itemId) {
+            console.log(`Clicked marketplace slot ${slotIndex} with item: ${slot.itemId}`);
+            // TODO: Implement buy logic
+        }
+    }
+
+    public showMarketplace(): void {
+        this.marketplaceVisible = true;
+        this.marketplaceContainer.setVisible(true);
+        this.marketplaceOverlay.setVisible(true);
+        
+        // Show sell button
+        const sellButton = this.marketplaceContainer.getData('sellButton');
+        if (sellButton) sellButton.setVisible(true);
+        
+        // Disable player movement
+        const farmScene = this.scene.get(SCENE_KEYS.FARM) as any;
+        if (farmScene && farmScene.player) {
+            farmScene.player.setVelocity(0, 0);
+        }
+    }
+
+    public hideMarketplace(): void {
+        this.marketplaceVisible = false;
+        this.marketplaceContainer.setVisible(false);
+        this.marketplaceOverlay.setVisible(false);
+        
+        // Hide sell button
+        const sellButton = this.marketplaceContainer.getData('sellButton');
+        if (sellButton) sellButton.setVisible(false);
+    }
+
+    public isMarketplaceOpen(): boolean {
+        return this.marketplaceVisible;
+    }
+
+    public isBackpackOpen(): boolean {
+        return this.backpackVisible;
+    }
+
+    public toggleMarketplace(): void {
+        if (this.marketplaceVisible) {
+            this.hideMarketplace();
+        } else {
+            this.showMarketplace();
+        }
+    }
+
+    private createSettingsButton(): void {
+        const settingsButton = this.add.image(
+            this.cameras.main.width - 50,
+            50,
+            'settings-button'
+        );
+        settingsButton.setScrollFactor(0);
+        settingsButton.setDepth(100);
+        settingsButton.setScale(1.0);
+        settingsButton.setInteractive();
+
+        settingsButton.on('pointerover', () => {
+            settingsButton.setScale(1.1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        settingsButton.on('pointerout', () => {
+            settingsButton.setScale(1.0);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        settingsButton.on('pointerdown', () => {
+            console.log('Settings button clicked');
+            // TODO: Open settings menu
+        });
+
+        this.#hudContainer.add(settingsButton);
     }
 }
