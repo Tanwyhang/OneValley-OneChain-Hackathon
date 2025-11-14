@@ -40,7 +40,7 @@ export class UIScene extends Phaser.Scene {
         // Handle window resize with proper context binding
         this.handleResize = this.handleResize.bind(this);
         this.scale.on('resize', this.handleResize, this);
-        
+
         // Cleanup on scene shutdown
         this.events.once('shutdown', () => {
             this.scale.off('resize', this.handleResize, this);
@@ -49,7 +49,7 @@ export class UIScene extends Phaser.Scene {
 
         // Start with UI hidden by default
         this.hideUI();
-        
+
         // Setup keyboard input for item selection
         this.setupInput();
     }
@@ -153,14 +153,6 @@ export class UIScene extends Phaser.Scene {
             this.selectionIndicator.setVisible(true);
         }
 
-        // Update slot number colors
-        this.slots.forEach((_, index) => {
-            const numText = this.itemBarContainer.getAt(index * 2 + 1) as Phaser.GameObjects.Text;
-            if (numText) {
-                numText.setColor(index === this.selectedIndex ? '#00ff00' : '#ffffff');
-            }
-        });
-        
         // Emit event when selection changes
         this.events.emit('slot-selected', this.selectedIndex);
     }
