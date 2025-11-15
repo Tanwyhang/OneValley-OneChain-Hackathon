@@ -693,6 +693,8 @@ export class WorldSelectionScene extends Scene {
         
         this.cameras.main.once('camerafadeoutcomplete', () => {
             if (worldData.mapKey === 'FarmScene') {
+                // Stop this scene first, then start FarmScene
+                this.scene.stop();
                 this.scene.start('FarmScene');
             } else {
                 console.log(`Scene ${worldData.mapKey} not implemented yet`);

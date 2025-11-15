@@ -34,9 +34,20 @@ export class UIScene extends Phaser.Scene {
     private backpackKey!: Phaser.Input.Keyboard.Key;
     private backpackOverlay!: Phaser.GameObjects.Rectangle;
 
-    // Drag and drop properties
+    // Drag and drop properties (kept for compatibility)
     private draggedItem: { itemId: string; itemType?: string; count?: number; sourceSlot: Slot; sourceIndex: number; sourceType: 'itembar' | 'backpack' } | null = null;
     private dragGhost?: Phaser.GameObjects.Image;
+
+    // Held item properties (new click-based system)
+    private heldItem: { itemId: string; itemType?: string; count: number } | null = null;
+    private heldItemGhost?: Phaser.GameObjects.Image;
+    private heldItemCountText?: Phaser.GameObjects.Text;
+    private readonly MAX_STACK_SIZE = 99;
+
+    // Double-click tracking
+    private lastClickTime: number = 0;
+    private lastClickSlot: { index: number; type: 'itembar' | 'backpack' } | null = null;
+    private readonly DOUBLE_CLICK_DELAY = 300; // milliseconds
 
     // Marketplace properties
     private marketplaceContainer!: Phaser.GameObjects.Container;
@@ -50,6 +61,31 @@ export class UIScene extends Phaser.Scene {
     private readonly MARKETPLACE_COLS = 5;
     private readonly MARKETPLACE_ROWS = 6;
     private marketplaceCreated: boolean = false;
+    private selectedMarketplaceSlot: number = -1;
+
+    // Guide menu properties
+    private guideMenuVisible: boolean = false;
+    private guideMenuContainer?: Phaser.GameObjects.Container;
+    private guideMenuOverlay?: Phaser.GameObjects.Rectangle;
+
+    // Settings menu properties
+    private settingsMenuVisible: boolean = false;
+    private settingsMenuContainer?: Phaser.GameObjects.Container;
+    private settingsMenuOverlay?: Phaser.GameObjects.Rectangle;
+    private volumeSliderKnob?: Phaser.GameObjects.Circle;
+    private volumeValueText?: Phaser.GameObjects.Text;
+    private fullscreenCheckbox?: Phaser.GameObjects.Rectangle;
+    private fullscreenCheckmark?: Phaser.GameObjects.Text;
+    private isFullscreen: boolean = false;
+    private musicVolume: number = 0.5;
+
+    // Marketplace item data
+    private readonly MARKETPLACE_ITEMS = {
+        Weapons: ['sword_01a', 'sword_01b', 'sword_01c', 'sword_01d', 'sword_01e', 'sword_02a', 'sword_02b', 'sword_02c', 'sword_02d', 'sword_02e', 'bow_01a', 'bow_01b', 'bow_01d', 'bow_01e', 'bow_02a', 'bow_02b', 'bow_02d', 'bow_02e', 'arrow_01a', 'arrow_01b', 'arrow_02a', 'arrow_02b', 'shield_01a', 'shield_01b', 'shield_02a', 'shield_02b', 'staff_01a', 'staff_01b', 'spellbook_01a', 'spellbook_01b'],
+        Armors: ['helmet_01a', 'helmet_01b', 'helmet_01c', 'helmet_01d', 'helmet_01e', 'helmet_02a', 'helmet_02b', 'helmet_02c', 'helmet_02d', 'helmet_02e'],
+        Misc: ['book_01a', 'book_01b', 'book_02a', 'book_02b', 'coin_01a', 'coin_01b', 'coin_02a', 'coin_02b', 'crystal_01a', 'crystal_01b', 'gem_01a', 'gem_01b', 'gift_01a', 'gift_01b', 'ingot_01a', 'ingot_01b', 'key_01a', 'key_01b', 'necklace_01a', 'necklace_01b', 'pearl_01a', 'pearl_01b', 'ring_01a', 'ring_01b', 'scroll_01a', 'scroll_01b', 'scroll_01c', 'scroll_01d', 'scroll_01e', 'scroll_01f'],
+        Consumables: ['potion_01a', 'potion_01b', 'potion_01c', 'potion_01d', 'potion_01e', 'potion_01f', 'potion_01g', 'potion_01h', 'potion_02a', 'potion_02b', 'potion_02c', 'potion_02d', 'potion_02e', 'potion_02f', 'potion_03a', 'potion_03b', 'fish_01a', 'fish_01b', 'fish_01c', 'fish_01d', 'fish_01e', 'candy_01a', 'candy_01b', 'candy_01c', 'candy_01d', 'candy_01e', 'candy_01f', 'candy_01g', 'candy_02a', 'candy_02b']
+    };
 
     constructor() {
         super({
@@ -62,12 +98,24 @@ export class UIScene extends Phaser.Scene {
         // Set custom cursor with larger size
         this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
 
-        // Reset marketplace state
+        // Disable right-click context menu
+        this.input.mouse?.disableContextMenu();
+
+        // Reset ALL state and clear destroyed object references
         this.marketplaceCreated = false;
         this.marketplaceButtons = [];
         this.marketplaceSlots = [];
         this.backpackSlots = [];
         this.slots = [];
+        this.marketplaceVisible = false;
+        this.backpackVisible = false;
+        this.guideMenuVisible = false;
+        this.settingsMenuVisible = false;
+        this.selectedMarketplaceSlot = -1;
+        this.guideMenuContainer = undefined;
+        this.guideMenuOverlay = undefined;
+        this.settingsMenuContainer = undefined;
+        this.settingsMenuOverlay = undefined;
 
         // Create main HUD container with high depth
         this.#hudContainer = this.add.container(0, 0).setDepth(10000);
@@ -85,6 +133,8 @@ export class UIScene extends Phaser.Scene {
             this.scale.off('resize', this.handleResize, this);
             this.cleanupKeyHandlers();
             this.input.off('pointermove', this.onDragMove, this);
+            this.input.off('pointermove', this.updateHeldItemPosition, this);
+            this.clearHeldItem();
             this.#hudContainer.destroy(true);
         });
 
@@ -268,19 +318,27 @@ export class UIScene extends Phaser.Scene {
         // Add item count if more than 1
         if (count > 1) {
             slot.countText = this.add.text(
-                slot.x + 10,
-                slot.y + 10,
+                slot.x + 18,
+                slot.y + 18,
                 count.toString(),
                 {
-                    fontSize: '14px',
+                    fontSize: '16px',
                     color: '#ffffff',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    fontStyle: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3,
                     padding: { x: 2, y: 1 }
                 }
             ).setOrigin(1, 1)
-                .setDepth(1001 + slotIndex); // Even higher depth than item image
+                .setDepth(10000 + slotIndex); // Very high depth to ensure visibility
 
             this.itemBarContainer.add(slot.countText);
+        } else {
+            // Clear count text if count is 1
+            if (slot.countText) {
+                slot.countText.destroy();
+                slot.countText = undefined;
+            }
         }
 
         // Store item data
@@ -301,6 +359,12 @@ export class UIScene extends Phaser.Scene {
         if (!this.scene.settings.active) return;
         this.itemBarContainer.setVisible(true);
         this.updatePosition();
+        
+        // Update sell button position on resize
+        const sellButton = this.marketplaceContainer?.getData('sellButton');
+        if (sellButton) {
+            this.updateSellButtonPosition(sellButton);
+        }
     }
 
     private setupInput(): void {
@@ -494,21 +558,298 @@ export class UIScene extends Phaser.Scene {
             this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
         });
 
-        slotBg.on('pointerdown', () => {
-            if (this.draggedItem) return; // Prevent starting new drag while dragging
+        slotBg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
             const slot = slotType === 'itembar' ? this.slots[slotIndex] : this.backpackSlots[slotIndex];
-            if (slot && slot.itemId) {
-                this.startDrag(slot, slotIndex, slotType);
-            }
-        });
+            if (!slot) return;
 
-        slotBg.on('pointerup', () => {
-            if (this.draggedItem) {
-                const targetSlot = slotType === 'itembar' ? this.slots[slotIndex] : this.backpackSlots[slotIndex];
-                this.onDrop(targetSlot, slotIndex, slotType);
+            // Left click
+            if (pointer.leftButtonDown()) {
+                // Check for double-click
+                const currentTime = this.time.now;
+                const isDoubleClick = this.lastClickSlot && 
+                    this.lastClickSlot.index === slotIndex && 
+                    this.lastClickSlot.type === slotType && 
+                    (currentTime - this.lastClickTime) < this.DOUBLE_CLICK_DELAY;
+
+                if (isDoubleClick) {
+                    this.handleDoubleClick(slot, slotIndex, slotType);
+                    this.lastClickSlot = null;
+                    this.lastClickTime = 0;
+                } else {
+                    this.handleLeftClick(slot, slotIndex, slotType);
+                    this.lastClickSlot = { index: slotIndex, type: slotType };
+                    this.lastClickTime = currentTime;
+                }
+            }
+            // Right click
+            else if (pointer.rightButtonDown()) {
+                this.handleRightClick(slot, slotIndex, slotType);
             }
         });
     }
+
+    // ===== NEW CLICK-BASED ITEM SYSTEM =====
+
+    private handleDoubleClick(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        if (!slot.itemId) return;
+
+        const targetItemId = slot.itemId;
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+        
+        if (currentCount >= this.MAX_STACK_SIZE) return;
+
+        // Determine which slots to check
+        const slotsToCheck = slotType === 'itembar' ? this.slots : this.backpackSlots;
+        
+        // Collect items from other slots
+        let totalCollected = 0;
+        const spaceAvailable = this.MAX_STACK_SIZE - currentCount;
+
+        for (let i = 0; i < slotsToCheck.length; i++) {
+            if (i === slotIndex) continue; // Skip the target slot
+            
+            const otherSlot = slotsToCheck[i];
+            if (otherSlot.itemId === targetItemId) {
+                const otherCount = otherSlot.countText ? parseInt(otherSlot.countText.text) : 1;
+                const canCollect = Math.min(otherCount, spaceAvailable - totalCollected);
+                
+                if (canCollect > 0) {
+                    totalCollected += canCollect;
+                    const remaining = otherCount - canCollect;
+                    
+                    if (remaining > 0) {
+                        this.updateSlotCount(otherSlot, i, slotType, remaining);
+                    } else {
+                        this.clearSlot(i, slotType);
+                    }
+                    
+                    if (totalCollected >= spaceAvailable) break;
+                }
+            }
+        }
+
+        // Update target slot with collected items
+        if (totalCollected > 0) {
+            const newCount = currentCount + totalCollected;
+            this.updateSlotCount(slot, slotIndex, slotType, newCount);
+        }
+    }
+
+    private handleLeftClick(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        // Empty hand + slot with items → Pick up entire stack
+        if (!this.heldItem && slot.itemId) {
+            const count = slot.countText ? parseInt(slot.countText.text) : 1;
+            this.pickupItems(slot, slotIndex, slotType, count);
+        }
+        // Holding items + empty slot → Place entire stack
+        else if (this.heldItem && !slot.itemId) {
+            this.placeItems(slot, slotIndex, slotType, this.heldItem.count);
+        }
+        // Holding items + slot with same item → Merge stacks
+        else if (this.heldItem && slot.itemId === this.heldItem.itemId) {
+            this.mergeStacks(slot, slotIndex, slotType);
+        }
+        // Holding items + slot with different item → Swap items
+        else if (this.heldItem && slot.itemId && slot.itemId !== this.heldItem.itemId) {
+            this.swapItemsNew(slot, slotIndex, slotType);
+        }
+    }
+
+    private handleRightClick(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        // Empty hand + slot with items → Pick up half stack
+        if (!this.heldItem && slot.itemId) {
+            const count = slot.countText ? parseInt(slot.countText.text) : 1;
+            const halfCount = Math.ceil(count / 2);
+            this.pickupItems(slot, slotIndex, slotType, halfCount);
+        }
+        // Holding items + empty slot → Place 1 item
+        else if (this.heldItem && !slot.itemId) {
+            this.placeItems(slot, slotIndex, slotType, 1);
+        }
+        // Holding items + slot with same item → Add 1 item (if < 99)
+        else if (this.heldItem && slot.itemId === this.heldItem.itemId) {
+            const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+            if (currentCount < this.MAX_STACK_SIZE) {
+                this.placeItems(slot, slotIndex, slotType, 1);
+            }
+        }
+    }
+
+    private pickupItems(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack', count: number): void {
+        if (!slot.itemId) return;
+
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+        const pickupCount = Math.min(count, currentCount);
+        const remainingCount = currentCount - pickupCount;
+
+        // Create held item
+        this.heldItem = {
+            itemId: slot.itemId,
+            itemType: slot.itemType,
+            count: pickupCount
+        };
+
+        // Create ghost image
+        this.createHeldItemGhost();
+
+        // Update or clear slot
+        if (remainingCount > 0) {
+            this.updateSlotCount(slot, slotIndex, slotType, remainingCount);
+        } else {
+            this.clearSlot(slotIndex, slotType);
+        }
+    }
+
+    private placeItems(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack', count: number): void {
+        if (!this.heldItem) return;
+
+        const currentCount = slot.itemId ? (slot.countText ? parseInt(slot.countText.text) : 1) : 0;
+        const spaceAvailable = this.MAX_STACK_SIZE - currentCount;
+        const placeCount = Math.min(count, spaceAvailable, this.heldItem.count);
+
+        if (placeCount <= 0) return;
+
+        const newCount = currentCount + placeCount;
+        this.heldItem.count -= placeCount;
+
+        // Update slot
+        if (slotType === 'itembar') {
+            this.addItem(this.heldItem.itemId, slotIndex, this.heldItem.itemType, newCount);
+        } else {
+            this.addItemToBackpack(this.heldItem.itemId, slotIndex, this.heldItem.itemType, newCount);
+        }
+
+        // Clear held item if empty
+        if (this.heldItem.count <= 0) {
+            this.clearHeldItem();
+        } else {
+            this.updateHeldItemGhost();
+        }
+    }
+
+    private mergeStacks(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        if (!this.heldItem || !slot.itemId || slot.itemId !== this.heldItem.itemId) return;
+
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+        const spaceAvailable = this.MAX_STACK_SIZE - currentCount;
+        const transferCount = Math.min(this.heldItem.count, spaceAvailable);
+
+        if (transferCount <= 0) return;
+
+        const newCount = currentCount + transferCount;
+        this.heldItem.count -= transferCount;
+
+        // Update slot
+        if (slotType === 'itembar') {
+            this.addItem(this.heldItem.itemId, slotIndex, this.heldItem.itemType, newCount);
+        } else {
+            this.addItemToBackpack(this.heldItem.itemId, slotIndex, this.heldItem.itemType, newCount);
+        }
+
+        // Clear held item if empty
+        if (this.heldItem.count <= 0) {
+            this.clearHeldItem();
+        } else {
+            this.updateHeldItemGhost();
+        }
+    }
+
+    private swapItemsNew(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
+        if (!this.heldItem || !slot.itemId) return;
+
+        const slotItemId = slot.itemId;
+        const slotItemType = slot.itemType;
+        const slotCount = slot.countText ? parseInt(slot.countText.text) : 1;
+
+        // Place held item in slot
+        if (slotType === 'itembar') {
+            this.addItem(this.heldItem.itemId, slotIndex, this.heldItem.itemType, this.heldItem.count);
+        } else {
+            this.addItemToBackpack(this.heldItem.itemId, slotIndex, this.heldItem.itemType, this.heldItem.count);
+        }
+
+        // Pick up slot item
+        this.heldItem = {
+            itemId: slotItemId,
+            itemType: slotItemType,
+            count: slotCount
+        };
+
+        this.updateHeldItemGhost();
+    }
+
+    private updateSlotCount(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack', count: number): void {
+        if (!slot.itemId) return;
+
+        if (slotType === 'itembar') {
+            this.addItem(slot.itemId, slotIndex, slot.itemType, count);
+        } else {
+            this.addItemToBackpack(slot.itemId, slotIndex, slot.itemType, count);
+        }
+    }
+
+    private createHeldItemGhost(): void {
+        if (!this.heldItem) return;
+
+        this.heldItemGhost = this.add.image(0, 0, this.heldItem.itemId)
+            .setDisplaySize(32, 32)
+            .setAlpha(0.8)
+            .setDepth(35000);
+
+        if (this.heldItem.count > 1) {
+            this.heldItemCountText = this.add.text(0, 0, this.heldItem.count.toString(), {
+                fontSize: '14px',
+                color: '#ffffff',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                padding: { x: 2, y: 1 }
+            }).setOrigin(1, 1).setDepth(35001);
+        }
+
+        // Follow pointer
+        this.input.on('pointermove', this.updateHeldItemPosition, this);
+    }
+
+    private updateHeldItemGhost(): void {
+        if (this.heldItemCountText && this.heldItem) {
+            if (this.heldItem.count > 1) {
+                this.heldItemCountText.setText(this.heldItem.count.toString());
+            } else {
+                this.heldItemCountText.destroy();
+                this.heldItemCountText = undefined;
+            }
+        } else if (!this.heldItemCountText && this.heldItem && this.heldItem.count > 1) {
+            this.heldItemCountText = this.add.text(0, 0, this.heldItem.count.toString(), {
+                fontSize: '14px',
+                color: '#ffffff',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                padding: { x: 2, y: 1 }
+            }).setOrigin(1, 1).setDepth(35001);
+        }
+    }
+
+    private updateHeldItemPosition(pointer: Phaser.Input.Pointer): void {
+        if (this.heldItemGhost) {
+            this.heldItemGhost.setPosition(pointer.x, pointer.y);
+        }
+        if (this.heldItemCountText) {
+            this.heldItemCountText.setPosition(pointer.x + 16, pointer.y + 16);
+        }
+    }
+
+    private clearHeldItem(): void {
+        if (this.heldItemGhost) {
+            this.heldItemGhost.destroy();
+            this.heldItemGhost = undefined;
+        }
+        if (this.heldItemCountText) {
+            this.heldItemCountText.destroy();
+            this.heldItemCountText = undefined;
+        }
+        this.input.off('pointermove', this.updateHeldItemPosition, this);
+        this.heldItem = null;
+    }
+
+    // ===== OLD DRAG SYSTEM (KEPT FOR COMPATIBILITY) =====
 
     private startDrag(slot: Slot, slotIndex: number, slotType: 'itembar' | 'backpack'): void {
         if (!slot.itemId || !slot.itemImage) return;
@@ -645,18 +986,26 @@ export class UIScene extends Phaser.Scene {
         // Add item count if more than 1
         if (count > 1) {
             slot.countText = this.add.text(
-                slot.x + 10,
-                slot.y + 10,
+                slot.x + 18,
+                slot.y + 18,
                 count.toString(),
                 {
-                    fontSize: '14px',
+                    fontSize: '16px',
                     color: '#ffffff',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    fontStyle: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3,
                     padding: { x: 2, y: 1 }
                 }
             ).setOrigin(1, 1)
-                .setDepth(1001 + slotIndex);
+                .setDepth(10000 + slotIndex);
             this.backpackContainer.add(slot.countText);
+        } else {
+            // Clear count text if count is 1
+            if (slot.countText) {
+                slot.countText.destroy();
+                slot.countText = undefined;
+            }
         }
 
         // Store item data
@@ -834,7 +1183,8 @@ export class UIScene extends Phaser.Scene {
                 this.marketplaceSlots.push(slot);
                 this.marketplaceContainer.add(slotBg);
 
-                // Make interactive (for buy/sell)
+                // Make interactive (for selection)
+                const slotIdx = row * this.MARKETPLACE_COLS + col;
                 slotBg.setInteractive();
                 slotBg.on('pointerover', () => {
                     this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
@@ -842,7 +1192,7 @@ export class UIScene extends Phaser.Scene {
                 slotBg.on('pointerout', () => {
                     this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
                 });
-                slotBg.on('pointerdown', () => this.handleMarketplaceSlotClick(row * this.MARKETPLACE_COLS + col));
+                slotBg.on('pointerdown', () => this.selectMarketplaceSlot(slotIdx));
             }
         }
     }
@@ -924,17 +1274,20 @@ export class UIScene extends Phaser.Scene {
         buyButton.setInteractive({ useHandCursor: true });
 
         buyButton.on('pointerdown', () => {
-            console.log('Buy button clicked');
-            // TODO: Implement buy logic
+            buyButton.setTexture('selected-buy-button');
+            this.time.delayedCall(100, () => {
+                buyButton.setTexture('buy-button');
+            });
+            this.handleBuyItem();
         });
 
         buyButton.on('pointerover', () => {
-            buyButton.setScale(marketplaceScale * 1.1);
+            buyButton.setTexture('hover-buy-button');
             this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
         });
 
         buyButton.on('pointerout', () => {
-            buyButton.setScale(marketplaceScale);
+            buyButton.setTexture('buy-button');
             this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
         });
 
@@ -942,24 +1295,15 @@ export class UIScene extends Phaser.Scene {
     }
 
     private createMarketplaceSellButton(): void {
-        // Position after item bar (to the right)
-        const itemBarX = this.cameras.main.centerX;
-        const itemBarY = this.cameras.main.height - 60;
-        
-        // Calculate item bar width (8 slots * 48px + 7 gaps * 6px)
-        const slotSize = 48;
-        const spacing = 6;
-        const itemBarWidth = (this.SLOT_COUNT * (slotSize + spacing)) - spacing;
-        
-        const sellX = itemBarX + (itemBarWidth / 2) + 20;
-        const sellY = itemBarY;
-
-        const sellButton = this.add.image(sellX, sellY, 'sell-button');
+        const sellButton = this.add.image(0, 0, 'sell-button');
         sellButton.setOrigin(0, 0.5);
         sellButton.setDepth(26000); // Above item bar
         sellButton.setScrollFactor(0);
         sellButton.setInteractive({ useHandCursor: true });
         sellButton.setVisible(false); // Hidden by default, show when marketplace opens
+        
+        // Update position dynamically
+        this.updateSellButtonPosition(sellButton);
 
         sellButton.on('pointerdown', () => {
             console.log('Sell button clicked');
@@ -982,7 +1326,32 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceContainer.setData('sellButton', sellButton);
     }
 
+    private updateSellButtonPosition(sellButton: Phaser.GameObjects.Image): void {
+        // Position after item bar (to the right)
+        const itemBarX = this.cameras.main.centerX;
+        const itemBarY = this.cameras.main.height - 60;
+        
+        // Calculate item bar width (8 slots * 48px + 7 gaps * 6px)
+        const slotSize = 48;
+        const spacing = 6;
+        const itemBarWidth = (this.SLOT_COUNT * (slotSize + spacing)) - spacing;
+        
+        const sellX = itemBarX + (itemBarWidth / 2) + 20;
+        const sellY = itemBarY;
+        
+        sellButton.setPosition(sellX, sellY);
+    }
+
     private loadMarketplaceItems(category: string): void {
+        // Clear selection and reset all slot textures
+        if (this.selectedMarketplaceSlot !== -1) {
+            const prevSlot = this.marketplaceSlots[this.selectedMarketplaceSlot];
+            if (prevSlot && prevSlot.bg) {
+                (prevSlot.bg as Phaser.GameObjects.Image).setTexture('slot');
+            }
+        }
+        this.selectedMarketplaceSlot = -1;
+
         // Clear existing items
         this.marketplaceSlots.forEach(slot => {
             if (slot.itemImage) {
@@ -997,15 +1366,71 @@ export class UIScene extends Phaser.Scene {
             slot.itemType = undefined;
         });
 
-        // TODO: Load items based on category
-        console.log(`Loading items for category: ${category}`);
+        // Get items for category
+        const items = this.MARKETPLACE_ITEMS[category as keyof typeof this.MARKETPLACE_ITEMS] || [];
+        
+        // Populate slots with items (max 30)
+        items.forEach((itemId, index) => {
+            if (index >= this.MARKETPLACE_SLOT_COUNT) return;
+            
+            const slot = this.marketplaceSlots[index];
+            if (!slot) return;
+
+            // Add item image
+            if (this.textures.exists(itemId)) {
+                slot.itemImage = this.add.image(slot.x, slot.y, itemId)
+                    .setDisplaySize(32, 32)
+                    .setOrigin(0.5, 0.5)
+                    .setDepth(250);
+                this.marketplaceContainer.add(slot.itemImage);
+                
+                slot.itemId = itemId;
+                slot.itemType = category.toLowerCase();
+            }
+        });
     }
 
-    private handleMarketplaceSlotClick(slotIndex: number): void {
+    private selectMarketplaceSlot(slotIndex: number): void {
         const slot = this.marketplaceSlots[slotIndex];
-        if (slot && slot.itemId) {
-            console.log(`Clicked marketplace slot ${slotIndex} with item: ${slot.itemId}`);
-            // TODO: Implement buy logic
+        if (!slot || !slot.itemId) return;
+
+        // Deselect previous slot
+        if (this.selectedMarketplaceSlot !== -1) {
+            const prevSlot = this.marketplaceSlots[this.selectedMarketplaceSlot];
+            if (prevSlot && prevSlot.bg) {
+                (prevSlot.bg as Phaser.GameObjects.Image).setTexture('slot');
+            }
+        }
+
+        // Select new slot
+        this.selectedMarketplaceSlot = slotIndex;
+        (slot.bg as Phaser.GameObjects.Image).setTexture('selected-slot');
+    }
+
+    private handleBuyItem(): void {
+        if (this.selectedMarketplaceSlot === -1) return;
+        
+        const slot = this.marketplaceSlots[this.selectedMarketplaceSlot];
+        if (!slot || !slot.itemId) return;
+
+        // Try to add to existing stack in itembar
+        for (let i = 0; i < this.SLOT_COUNT; i++) {
+            const itembarSlot = this.slots[i];
+            if (itembarSlot.itemId === slot.itemId) {
+                const currentCount = itembarSlot.countText ? parseInt(itembarSlot.countText.text) : 1;
+                if (currentCount < this.MAX_STACK_SIZE) {
+                    this.addItem(slot.itemId, i, slot.itemType, currentCount + 1);
+                    return;
+                }
+            }
+        }
+
+        // Find first empty slot
+        for (let i = 0; i < this.SLOT_COUNT; i++) {
+            if (!this.slots[i].itemId) {
+                this.addItem(slot.itemId, i, slot.itemType, 1);
+                return;
+            }
         }
     }
 
@@ -1013,6 +1438,9 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceVisible = true;
         this.marketplaceContainer.setVisible(true);
         this.marketplaceOverlay.setVisible(true);
+        
+        // Load items for current category
+        this.loadMarketplaceItems(this.selectedCategory);
         
         // Show sell button
         const sellButton = this.marketplaceContainer.getData('sellButton');
@@ -1029,6 +1457,15 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceVisible = false;
         this.marketplaceContainer.setVisible(false);
         this.marketplaceOverlay.setVisible(false);
+        
+        // Reset selection
+        if (this.selectedMarketplaceSlot !== -1) {
+            const slot = this.marketplaceSlots[this.selectedMarketplaceSlot];
+            if (slot && slot.bg) {
+                (slot.bg as Phaser.GameObjects.Image).setTexture('slot');
+            }
+            this.selectedMarketplaceSlot = -1;
+        }
         
         // Hide sell button
         const sellButton = this.marketplaceContainer.getData('sellButton');
@@ -1073,10 +1510,334 @@ export class UIScene extends Phaser.Scene {
         });
 
         settingsButton.on('pointerdown', () => {
-            console.log('Settings button clicked');
-            // TODO: Open settings menu
+            this.toggleSettingsMenu();
         });
 
         this.#hudContainer.add(settingsButton);
+
+        // Create guide button below settings button
+        const guideButton = this.add.image(
+            this.cameras.main.width - 50,
+            120,
+            'guide-button'
+        );
+        guideButton.setScrollFactor(0);
+        guideButton.setDepth(100);
+        guideButton.setScale(1.0);
+        guideButton.setInteractive();
+
+        guideButton.on('pointerover', () => {
+            guideButton.setScale(1.1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+
+        guideButton.on('pointerout', () => {
+            guideButton.setScale(1.0);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        guideButton.on('pointerdown', () => {
+            this.toggleGuideMenu();
+        });
+
+        this.#hudContainer.add(guideButton);
+    }
+
+    private toggleGuideMenu(): void {
+        if (this.guideMenuVisible) {
+            this.hideGuideMenu();
+        } else {
+            this.showGuideMenu();
+        }
+    }
+
+    private showGuideMenu(): void {
+        if (this.guideMenuContainer) {
+            this.guideMenuContainer.setVisible(true);
+            this.guideMenuOverlay?.setVisible(true);
+            this.guideMenuVisible = true;
+            return;
+        }
+
+        // Create overlay
+        this.guideMenuOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width * 2,
+            this.cameras.main.height * 2,
+            0x000000,
+            0.8
+        );
+        this.guideMenuOverlay.setOrigin(0.5);
+        this.guideMenuOverlay.setDepth(5000);
+        this.guideMenuOverlay.setScrollFactor(0);
+        this.guideMenuOverlay.setInteractive();
+
+        // Create container
+        this.guideMenuContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+        this.guideMenuContainer.setScrollFactor(0);
+        this.guideMenuContainer.setDepth(5001);
+
+        // Background panel (taller to fit content)
+        const panel = this.add.rectangle(0, 0, 600, 600, 0x2a2a2a, 0.95);
+        panel.setStrokeStyle(3, 0x4a4a4a);
+        this.guideMenuContainer.add(panel);
+
+        // Title
+        const title = this.add.text(0, -280, '📖 GAME GUIDE', {
+            fontSize: '28px',
+            color: '#ffcc00',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.guideMenuContainer.add(title);
+
+        // Guide content
+        const guideText = `🎮 CONTROLS
+W/A/S/D - Move  |  SHIFT - Run  |  1-8 - Select slots
+Left Click - Pick/Place items  |  Right Click - Split stack
+Double Click - Group same items  |  B - Backpack  |  ESC - Close
+
+📦 INVENTORY (Max 99 per stack)
+• Item Bar: 8 quick slots at bottom
+• Backpack: 25 slots (Press B)
+• Left Click: Move entire stack
+• Right Click: Pick half / Place 1 item
+• Double Click: Auto-group same items
+
+🏪 MARKETPLACE
+1. Walk near marketplace building
+2. Click floating icon to open
+3. Select category (Weapons/Armors/Misc/Consumables)
+4. Click item to select (slot turns green)
+5. Click BUY button to purchase
+6. Items stack automatically in item bar
+
+💡 TIPS
+• Stack items to save space
+• Use backpack for storage
+• Double-click to organize quickly
+• Right-click to split for trading`;
+
+        const content = this.add.text(0, 18, guideText, {
+            fontSize: '14px',
+            color: '#ffffff',
+            align: 'left',
+            lineSpacing: 8,
+            wordWrap: { width: 550 }
+        }).setOrigin(0.5);
+        this.guideMenuContainer.add(content);
+
+        // Close button
+        const closeBtn = this.add.text(280, -280, 'X', {
+            fontSize: '32px',
+            color: '#ff4444',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        closeBtn.setInteractive();
+        closeBtn.on('pointerdown', () => this.hideGuideMenu());
+        closeBtn.on('pointerover', () => {
+            closeBtn.setScale(1.2);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        closeBtn.on('pointerout', () => {
+            closeBtn.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        this.guideMenuContainer.add(closeBtn);
+
+        this.#hudContainer.add(this.guideMenuContainer);
+        this.guideMenuVisible = true;
+    }
+
+    private hideGuideMenu(): void {
+        if (this.guideMenuContainer) {
+            this.guideMenuContainer.setVisible(false);
+        }
+        if (this.guideMenuOverlay) {
+            this.guideMenuOverlay.setVisible(false);
+        }
+        this.guideMenuVisible = false;
+    }
+
+    // ===== SETTINGS MENU =====
+
+    private toggleSettingsMenu(): void {
+        if (this.settingsMenuVisible) {
+            this.hideSettingsMenu();
+        } else {
+            this.showSettingsMenu();
+        }
+    }
+
+    private showSettingsMenu(): void {
+        if (this.settingsMenuContainer) {
+            this.settingsMenuContainer.setVisible(true);
+            this.settingsMenuOverlay?.setVisible(true);
+            this.settingsMenuVisible = true;
+            return;
+        }
+
+        // Create overlay
+        this.settingsMenuOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width * 2,
+            this.cameras.main.height * 2,
+            0x000000,
+            0.8
+        );
+        this.settingsMenuOverlay.setOrigin(0.5);
+        this.settingsMenuOverlay.setDepth(5000);
+        this.settingsMenuOverlay.setScrollFactor(0);
+        this.settingsMenuOverlay.setInteractive();
+
+        // Create container
+        this.settingsMenuContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+        this.settingsMenuContainer.setScrollFactor(0);
+        this.settingsMenuContainer.setDepth(5001);
+
+        // Background panel
+        const panel = this.add.rectangle(0, 0, 400, 300, 0x2a2a2a, 0.95);
+        panel.setStrokeStyle(3, 0x4a4a4a);
+        this.settingsMenuContainer.add(panel);
+
+        // Title
+        const title = this.add.text(0, -130, '⚙️ SETTINGS', {
+            fontSize: '28px',
+            color: '#ffcc00',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.settingsMenuContainer.add(title);
+
+        // Music Volume Label
+        const volumeLabel = this.add.text(-150, -60, '🔊 Music Volume', {
+            fontSize: '18px',
+            color: '#ffffff'
+        }).setOrigin(0, 0.5);
+        this.settingsMenuContainer.add(volumeLabel);
+
+        // Slider track
+        const sliderTrack = this.add.rectangle(0, -20, 200, 8, 0x555555);
+        this.settingsMenuContainer.add(sliderTrack);
+
+        // Slider knob
+        this.volumeSliderKnob = this.add.circle(this.musicVolume * 200 - 100, -20, 12, 0xffffff);
+        this.volumeSliderKnob.setInteractive({ draggable: true });
+        this.settingsMenuContainer.add(this.volumeSliderKnob);
+
+        // Volume value text
+        this.volumeValueText = this.add.text(120, -20, `${Math.round(this.musicVolume * 100)}%`, {
+            fontSize: '16px',
+            color: '#ffffff'
+        }).setOrigin(0, 0.5);
+        this.settingsMenuContainer.add(this.volumeValueText);
+
+        // Slider drag logic
+        this.volumeSliderKnob.on('drag', (pointer: Phaser.Input.Pointer) => {
+            const localX = pointer.x - this.cameras.main.centerX;
+            const clampedX = Phaser.Math.Clamp(localX, -100, 100);
+            this.volumeSliderKnob!.x = clampedX;
+            this.musicVolume = (clampedX + 100) / 200;
+            this.volumeValueText!.setText(`${Math.round(this.musicVolume * 100)}%`);
+        });
+
+        // Fullscreen Label
+        const fullscreenLabel = this.add.text(-150, 40, '🖥️ Fullscreen', {
+            fontSize: '18px',
+            color: '#ffffff'
+        }).setOrigin(0, 0.5);
+        this.settingsMenuContainer.add(fullscreenLabel);
+
+        // Checkbox
+        this.fullscreenCheckbox = this.add.rectangle(80, 40, 30, 30, 0x555555);
+        this.fullscreenCheckbox.setStrokeStyle(2, 0xffffff);
+        this.fullscreenCheckbox.setInteractive();
+        this.settingsMenuContainer.add(this.fullscreenCheckbox);
+
+        // Checkmark
+        this.fullscreenCheckmark = this.add.text(80, 40, '✓', {
+            fontSize: '24px',
+            color: '#00ff00',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.fullscreenCheckmark.setVisible(this.isFullscreen);
+        this.settingsMenuContainer.add(this.fullscreenCheckmark);
+
+        // Checkbox click
+        this.fullscreenCheckbox.on('pointerdown', () => {
+            this.isFullscreen = !this.isFullscreen;
+            this.fullscreenCheckmark!.setVisible(this.isFullscreen);
+        });
+
+        // Save button (64x32 px)
+        const saveBtn = this.add.image(0, 110, 'save-button');
+        saveBtn.setOrigin(0.5);
+        saveBtn.setInteractive();
+        this.settingsMenuContainer.add(saveBtn);
+
+        saveBtn.on('pointerover', () => {
+            saveBtn.setTexture('hover-save-button');
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        saveBtn.on('pointerout', () => {
+            saveBtn.setTexture('save-button');
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        saveBtn.on('pointerdown', () => {
+            saveBtn.setTexture('selected-save-button');
+            this.time.delayedCall(100, () => {
+                saveBtn.setTexture('save-button');
+            });
+            this.saveSettings();
+        });
+
+        // Close button
+        const closeBtn = this.add.text(180, -130, 'X', {
+            fontSize: '32px',
+            color: '#ff4444',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        closeBtn.setInteractive();
+        closeBtn.on('pointerdown', () => this.hideSettingsMenu());
+        closeBtn.on('pointerover', () => {
+            closeBtn.setScale(1.2);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        closeBtn.on('pointerout', () => {
+            closeBtn.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        this.settingsMenuContainer.add(closeBtn);
+
+        this.#hudContainer.add(this.settingsMenuContainer);
+        this.settingsMenuVisible = true;
+    }
+
+    private saveSettings(): void {
+        // Apply music volume
+        const farmScene = this.scene.get(SCENE_KEYS.FARM) as any;
+        if (farmScene && farmScene.bgMusic) {
+            farmScene.bgMusic.setVolume(this.musicVolume);
+        }
+
+        // Apply fullscreen
+        if (this.isFullscreen && !this.scale.isFullscreen) {
+            this.scale.startFullscreen();
+        } else if (!this.isFullscreen && this.scale.isFullscreen) {
+            this.scale.stopFullscreen();
+        }
+
+        // Close settings menu
+        this.hideSettingsMenu();
+    }
+
+    private hideSettingsMenu(): void {
+        if (this.settingsMenuContainer) {
+            this.settingsMenuContainer.setVisible(false);
+        }
+        if (this.settingsMenuOverlay) {
+            this.settingsMenuOverlay.setVisible(false);
+        }
+        this.settingsMenuVisible = false;
     }
 }

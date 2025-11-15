@@ -62,6 +62,9 @@ export class FarmScene extends Scene {
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
 
+    // Background music
+    private bgMusic?: Phaser.Sound.BaseSound;
+
     // Chat system
     private isChatting: boolean = false;
     private chatBubble!: Phaser.GameObjects.Container;
@@ -145,11 +148,38 @@ export class FarmScene extends Scene {
         // Load particle image
         this.load.image('firefly', 'firefly.png');
 
+        // Load background music
+        this.load.audio('bgm', 'audio/BGM-OneValley.mp3');
+
         this.load.setPath('assets/items');
+        
+        // Load test items
         this.load.image('potion_01a', 'consumables/potion_01a.png');
         this.load.image('fish_01a', 'consumables/fish_01a.png');
         this.load.image('candy_01a', 'consumables/candy_01a.png');
         this.load.image('helmet_01a', 'armors/helmet_01a.png');
+
+        // Load marketplace items - Weapons
+        const weapons = ['sword_01a', 'sword_01b', 'sword_01c', 'sword_01d', 'sword_01e', 'sword_02a', 'sword_02b', 'sword_02c', 'sword_02d', 'sword_02e', 'bow_01a', 'bow_01b', 'bow_01d', 'bow_01e', 'bow_02a', 'bow_02b', 'bow_02d', 'bow_02e', 'arrow_01a', 'arrow_01b', 'arrow_02a', 'arrow_02b', 'shield_01a', 'shield_01b', 'shield_02a', 'shield_02b', 'staff_01a', 'staff_01b', 'spellbook_01a', 'spellbook_01b'];
+        weapons.forEach(item => this.load.image(item, `weapons/${item}.png`));
+
+        // Load marketplace items - Armors
+        const armors = ['helmet_01a', 'helmet_01b', 'helmet_01c', 'helmet_01d', 'helmet_01e', 'helmet_02a', 'helmet_02b', 'helmet_02c', 'helmet_02d', 'helmet_02e'];
+        armors.forEach(item => {
+            if (item !== 'helmet_01a') this.load.image(item, `armors/${item}.png`);
+        });
+
+        // Load marketplace items - Misc
+        const misc = ['book_01a', 'book_01b', 'book_02a', 'book_02b', 'coin_01a', 'coin_01b', 'coin_02a', 'coin_02b', 'crystal_01a', 'crystal_01b', 'gem_01a', 'gem_01b', 'gift_01a', 'gift_01b', 'ingot_01a', 'ingot_01b', 'key_01a', 'key_01b', 'necklace_01a', 'necklace_01b', 'pearl_01a', 'pearl_01b', 'ring_01a', 'ring_01b', 'scroll_01a', 'scroll_01b', 'scroll_01c', 'scroll_01d', 'scroll_01e', 'scroll_01f'];
+        misc.forEach(item => this.load.image(item, `misc/${item}.png`));
+
+        // Load marketplace items - Consumables
+        const consumables = ['potion_01a', 'potion_01b', 'potion_01c', 'potion_01d', 'potion_01e', 'potion_01f', 'potion_01g', 'potion_01h', 'potion_02a', 'potion_02b', 'potion_02c', 'potion_02d', 'potion_02e', 'potion_02f', 'potion_03a', 'potion_03b', 'fish_01a', 'fish_01b', 'fish_01c', 'fish_01d', 'fish_01e', 'candy_01a', 'candy_01b', 'candy_01c', 'candy_01d', 'candy_01e', 'candy_01f', 'candy_01g', 'candy_02a', 'candy_02b'];
+        consumables.forEach(item => {
+            if (item !== 'potion_01a' && item !== 'fish_01a' && item !== 'candy_01a') {
+                this.load.image(item, `consumables/${item}.png`);
+            }
+        });
 
         // Load UI assets
         this.load.setPath('assets/ui');
@@ -173,10 +203,23 @@ export class FarmScene extends Scene {
         
         // Buy/Sell buttons
         this.load.image('buy-button', 'buy-button.png');
+        this.load.image('hover-buy-button', 'hover-buy-button.png');
+        this.load.image('selected-buy-button', 'selected-buy-button.png');
         this.load.image('sell-button', 'sell-button.png');
+        
+        // Save button
+        this.load.image('save-button', 'save-button.png');
+        this.load.image('hover-save-button', 'hover-save-button.png');
+        this.load.image('selected-save-button', 'selected-save-button.png');
         
         // Settings button
         this.load.image('settings-button', 'settings-button.png');
+        
+        // Guide button
+        this.load.image('guide-button', 'guide-button.png');
+        
+        // Guide menu image (you'll add this)
+        // this.load.image('guide-menu', 'guide-menu.png');
         
         this.load.setPath('assets');
 
@@ -190,6 +233,22 @@ export class FarmScene extends Scene {
 
     create() {
         console.log('FarmScene create() started');
+
+        // Reset state variables and clear references to destroyed objects
+        this.isNearNPC = false;
+        this.isNearMarketplace = false;
+        this.isChatting = false;
+        this.isAttacking = false;
+        this.isCutting = false;
+        this.chickens = [];
+        this.cows = [];
+        this.sheep = [];
+        this.collisionLayers = [];
+        this.treeLayers = [];
+        this.tileCollisionBodies = new Map();
+        this.marketplaceIcon = null as any;
+        this.settingsIcon = null as any;
+        this.settingsModal = null as any;
 
         // Debug: Log camera info
         console.log('Camera at create start:', {
@@ -226,18 +285,21 @@ export class FarmScene extends Scene {
 
         EventBus.emit('current-scene-ready', this);
 
-        // Launch the UI Scene with parent reference
+        // Stop UIScene if it exists, then start it fresh
+        if (this.scene.isActive(SCENE_KEYS.UI)) {
+            this.scene.stop(SCENE_KEYS.UI);
+        }
         this.scene.launch(SCENE_KEYS.UI, { parent: this });
 
         // Add test items and show UI after a short delay to ensure everything is loaded
         this.time.delayedCall(1000, () => {
             const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
             if (uiScene) {
-                // Add test items to the item bar
-                uiScene.addItem('potion_01a', 0, 'potion');
-                uiScene.addItem('fish_01a', 1, 'food');
-                uiScene.addItem('candy_01a', 2, 'candy');
-                uiScene.addItem('helmet_01a', 3, 'helmet');
+                // Add test items to the item bar with counts
+                uiScene.addItem('potion_01a', 0, 'potion', 5);
+                uiScene.addItem('fish_01a', 1, 'food', 12);
+                uiScene.addItem('candy_01a', 2, 'candy', 25);
+                uiScene.addItem('helmet_01a', 3, 'helmet', 1);
 
                 // Add some empty slots with just numbers
                 for (let i = 4; i < 8; i++) {
@@ -248,6 +310,13 @@ export class FarmScene extends Scene {
                 uiScene.showUI();
             }
         });
+
+        // Start background music
+        this.bgMusic = this.sound.add('bgm', { loop: true, volume: 0.5 });
+        this.bgMusic.play();
+        
+        // Prevent music from pausing when window loses focus
+        this.sound.pauseOnBlur = false;
 
         // Handle window resize
         this.scale.off('resize', this.handleResize, this); // Remove any existing
@@ -1466,6 +1535,9 @@ export class FarmScene extends Scene {
     }
 
     private handleResize(gameSize: Phaser.Structs.Size): void {
+        // Check if scene is active and map exists
+        if (!this.scene.isActive() || !this.map) return;
+        
         // Update camera bounds to match new game size
         this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
 
@@ -2033,6 +2105,14 @@ export class FarmScene extends Scene {
         this.cameras.main.fadeOut(500, 0, 0, 0);
 
         this.cameras.main.once('camerafadeoutcomplete', () => {
+            // Stop background music
+            if (this.bgMusic) {
+                this.bgMusic.stop();
+            }
+            // Stop UI scene
+            this.scene.stop(SCENE_KEYS.UI);
+            // Stop this scene and start world selection
+            this.scene.stop();
             this.scene.start('WorldSelectionScene');
         });
     }
@@ -2041,6 +2121,11 @@ export class FarmScene extends Scene {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
         this.windTimer.destroy();
+        
+        // Stop background music
+        if (this.bgMusic) {
+            this.bgMusic.stop();
+        }
     }
 
     // In FarmScene class
