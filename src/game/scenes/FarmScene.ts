@@ -4,6 +4,14 @@ import { UIScene } from './UIScene';
 import { SCENE_KEYS } from './SceneKeys';
 import { Enemy } from '../enemies/Enemy';
 
+interface Crop {
+    x: number;
+    y: number;
+    growthStage: number; // 0: seed, 1: growing, 2: mature
+    type: 'carrot';
+    plantedTime: number;
+}
+
 interface ColliderShape {
     x: number;
     y: number;
@@ -45,6 +53,13 @@ export class FarmScene extends Scene {
     // Farming properties
     private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
     private waterTileIndices: Set<number> = new Set([6, 60, 61, 62, 115, 116, 117, 118]); // Water tile indices
+
+    // Crop management
+    private crops: Map<string, Crop> = new Map();
+    private cropGrowthTimers: Map<string, Phaser.Time.TimerEvent> = new Map();
+
+    // Sprite-based crop system to solve overlapping issues
+    private cropSprites: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
 
     // Player state
     private playerSpeed: number = 150;
@@ -242,23 +257,32 @@ export class FarmScene extends Scene {
         this.load.image('save-button', 'save-button.png');
         this.load.image('hover-save-button', 'hover-save-button.png');
         this.load.image('selected-save-button', 'selected-save-button.png');
-        
+
         // Settings button
         this.load.image('settings-button', 'settings-button.png');
-        
+
         // Guide button
         this.load.image('guide-button', 'guide-button.png');
-        
+
         // Guide menu image (you'll add this)
         // this.load.image('guide-menu', 'guide-menu.png');
-        
+
         this.load.setPath('assets');
+        // Load carrot sprites for different growth stages (use absolute paths)
+        this.load.image('carrot_stage1', 'carrot-new.png');
+        this.load.image('carrot_stage2', 'carrot-stage2.png');
+        this.load.image('carrot_stage3', 'carrot-stage3.png');
+
+        
 
         // Debug: Log when assets are loaded
         this.load.on('complete', () => {
             console.log('Assets loaded successfully');
             console.log('itembar texture exists:', this.textures.exists('itembar'));
             console.log('slot texture exists:', this.textures.exists('slot'));
+            console.log('carrot_stage1 texture exists:', this.textures.exists('carrot_stage1'));
+            console.log('carrot_stage2 texture exists:', this.textures.exists('carrot_stage2'));
+            console.log('carrot_stage3 texture exists:', this.textures.exists('carrot_stage3'));
         });
     }
 
@@ -569,6 +593,8 @@ export class FarmScene extends Scene {
 
         createLayer('Ground', -10);
         this.farmingLayer = createLayer('Farming Dirt + Water + Routes', -5)!;
+
+        // Create crops layer for backward compatibility (kept for any existing code)
         this.cropsLayer = this.map.createBlankLayer('Crops', this.tileset, 0, 0)!;
         this.cropsLayer.setDepth(-4);
 
@@ -1246,12 +1272,22 @@ export class FarmScene extends Scene {
     }
 
     private createChickens(): void {
-        // Spawn 5-6 chickens in the first fence (top-left enclosure)
-        // Fence area: x: 16-112 (tiles 1-7), y: 144-240 (tiles 9-15)
-        const chickenCount = Phaser.Math.Between(6, 8);
+        // Spawn chickens in left animalground areas (columns 1-7, rows 10-15 and 17-22)
+        const chickenCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < chickenCount; i++) {
-            const x = Phaser.Math.Between(32, 96);
-            const y = Phaser.Math.Between(160, 224);
+            let x, y;
+
+            // Distribute between upper and lower left pens
+            if (i < chickenCount / 2) {
+                // Upper pen: rows 10-15 with 1-tile padding
+                x = Phaser.Math.Between(32, 96);    // columns 2-6 (1-tile padding from edges)
+                y = Phaser.Math.Between(176, 224); // rows 11-14 (1-tile padding from edges)
+            } else {
+                // Lower pen: rows 17-22 with 1-tile padding
+                x = Phaser.Math.Between(32, 96);    // columns 2-6 (1-tile padding from edges)
+                y = Phaser.Math.Between(288, 336); // rows 18-21 (1-tile padding from edges)
+            }
 
             const chicken = this.physics.add.sprite(x, y, 'chicken', 0);
             chicken.setScale(1.5);
@@ -1261,7 +1297,7 @@ export class FarmScene extends Scene {
             // Add health data to chicken
             chicken.setData('health', 3);
             chicken.setData('maxHealth', 3);
-            chicken.setData('fenceBounds', { minX: 32, maxX: 96, minY: 160, maxY: 224 });
+            chicken.setData('fenceBounds', { minX: 32, maxX: 96, minY: 176, maxY: 336 });
 
             // Store chicken in array
             this.chickens.push(chicken);
@@ -1279,12 +1315,22 @@ export class FarmScene extends Scene {
     }
 
     private createCows(): void {
-        // Spawn 5-6 cows in the second fence (top-middle enclosure)
-        // Fence area: x: 144-240 (tiles 9-15), y: 144-240 (tiles 9-15)
-        const cowCount = Phaser.Math.Between(6, 8);
+        // Spawn cows in middle animalground areas (columns 9-15, rows 10-15 and 17-22)
+        const cowCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < cowCount; i++) {
-            const x = Phaser.Math.Between(160, 224);
-            const y = Phaser.Math.Between(160, 224);
+            let x, y;
+
+            // Distribute between upper and lower middle pens
+            if (i < cowCount / 2) {
+                // Upper pen: rows 10-15 with 1-tile padding
+                x = Phaser.Math.Between(160, 224); // columns 10-14 (1-tile padding from edges)
+                y = Phaser.Math.Between(176, 224); // rows 11-14 (1-tile padding from edges)
+            } else {
+                // Lower pen: rows 17-22 with 1-tile padding
+                x = Phaser.Math.Between(160, 224); // columns 10-14 (1-tile padding from edges)
+                y = Phaser.Math.Between(288, 336); // rows 18-21 (1-tile padding from edges)
+            }
 
             const cow = this.physics.add.sprite(x, y, 'cow', 0);
             cow.setScale(1.5);
@@ -1294,7 +1340,7 @@ export class FarmScene extends Scene {
             // Add health data to cow
             cow.setData('health', 5);
             cow.setData('maxHealth', 5);
-            cow.setData('fenceBounds', { minX: 160, maxX: 224, minY: 160, maxY: 224 });
+            cow.setData('fenceBounds', { minX: 160, maxX: 224, minY: 176, maxY: 336 });
 
             // Store cow in array
             this.cows.push(cow);
@@ -1311,22 +1357,49 @@ export class FarmScene extends Scene {
     }
 
     private createSheep(): void {
-        // Spawn 5-6 sheep in the third fence (top-left lower enclosure)
-        // Fence area: x: 16-112 (tiles 1-7), y: 256-320 (tiles 16-20)
-        const sheepCount = Phaser.Math.Between(6, 8);
+        // Since chickens already use left pens and cows use middle pens,
+        // distribute sheep across both left and middle pens as well
+        const sheepCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < sheepCount; i++) {
-            const x = Phaser.Math.Between(32, 96);
-            const y = Phaser.Math.Between(272, 304);
+            let x = 200; // Default position
+            let y = 200; // Default position
+
+            // Distribute across all 4 pens
+            const penType = i % 4;
+
+            switch (penType) {
+                case 0: // Upper left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);    // columns 2-6
+                    y = Phaser.Math.Between(176, 224); // rows 11-14
+                    break;
+                case 1: // Lower left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);    // columns 2-6
+                    y = Phaser.Math.Between(288, 336); // rows 18-21
+                    break;
+                case 2: // Upper middle pen with 1-tile padding
+                    x = Phaser.Math.Between(160, 224); // columns 10-14
+                    y = Phaser.Math.Between(176, 224); // rows 11-14
+                    break;
+                case 3: // Lower middle pen with 1-tile padding
+                    x = Phaser.Math.Between(160, 224); // columns 10-14
+                    y = Phaser.Math.Between(288, 336); // rows 18-21
+                    break;
+                default: // Fallback to upper left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);
+                    y = Phaser.Math.Between(176, 224);
+                    break;
+            }
 
             const sheep = this.physics.add.sprite(x, y, 'sheep', 0);
             sheep.setScale(1.5);
             sheep.play('sheep-idle');
             sheep.setDepth(100);
 
-            // Add health data to sheep
+            // Add health data to sheep with larger bounds to cover all pens (with padding)
             sheep.setData('health', 3);
             sheep.setData('maxHealth', 3);
-            sheep.setData('fenceBounds', { minX: 32, maxX: 96, minY: 272, maxY: 304 });
+            sheep.setData('fenceBounds', { minX: 32, maxX: 224, minY: 176, maxY: 336 });
 
             // Store sheep in array
             this.sheep.push(sheep);
@@ -1907,17 +1980,105 @@ export class FarmScene extends Scene {
             for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
                 for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
                     const targetTile = this.farmingLayer.getTileAt(x, y);
-                    const cropTile = this.cropsLayer.getTileAt(x, y);
+                    const existingCrop = this.crops.get(`${x},${y}`);
 
-                    // Check if the tile is tilled soil and has no crop on it
-                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && (!cropTile || cropTile.index === -1)) {
-                        // Plant a crop and immediately stop searching
-                        this.cropsLayer.putTileAt(1774, x, y);
+                    // Check if the tile is tilled soil and has no crop sprite
+                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && !existingCrop) {
+                        // Plant a carrot crop and immediately stop searching
+                        this.plantCarrot(x, y);
                         return;
                     }
                 }
             }
         });
+    }
+
+    private plantCarrot(tileX: number, tileY: number): void {
+        const cropKey = `${tileX},${tileY}`;
+
+        // Create the crop object
+        const crop: Crop = {
+            x: tileX,
+            y: tileY,
+            growthStage: 0,
+            type: 'carrot',
+            plantedTime: this.time.now
+        };
+
+        // Store the crop
+        this.crops.set(cropKey, crop);
+
+        // Calculate world position (tile center + half tile offset)
+        const worldX = tileX * 16 + 8;
+        const worldY = tileY * 16 + 8;
+
+        // Create initial seed sprite (stage 0) using carrot stage 1 sprite
+        console.log('Creating carrot seed sprite with key: carrot_stage1, exists:', this.textures.exists('carrot_stage1'));
+        const seedSprite = this.add.sprite(worldX, worldY - 5, 'carrot_stage1');
+        seedSprite.setOrigin(0.5);
+        seedSprite.setDepth(tileY); // Z-order based on row position, same level as tiles
+
+        // Store sprite for this crop
+        this.cropSprites.set(cropKey, [seedSprite]);
+
+        // Start growth timer for stage 1 (after 5 seconds)
+        const growthTimer1 = this.time.delayedCall(5000, () => {
+            this.growCarrot(cropKey, 1);
+        });
+
+        this.cropGrowthTimers.set(cropKey + '_stage1', growthTimer1);
+    }
+
+    private growCarrot(cropKey: string, newStage: number): void {
+        const crop = this.crops.get(cropKey);
+        if (!crop) return;
+
+        const existingSprites = this.cropSprites.get(cropKey);
+        if (!existingSprites) return;
+
+        crop.growthStage = newStage;
+
+        // Remove existing sprites and text
+        existingSprites.forEach(obj => {
+            if (obj && obj.active) {
+                obj.destroy();
+            }
+        });
+
+        // Calculate world positions for new sprites
+        const worldX = crop.x * 16 + 8;
+        const worldY = crop.y * 16 + 8;
+
+        const newSprites: Phaser.GameObjects.GameObject[] = [];
+
+        switch (newStage) {
+            case 1:
+                // Growing stage (5 seconds): use carrot stage 2 sprite
+                const growingSprite = this.add.sprite(worldX, worldY - 10, 'carrot_stage2');
+                growingSprite.setOrigin(0.5);
+                growingSprite.setDepth(crop.y); // Same level as tiles
+
+                newSprites.push(growingSprite);
+
+                // Start timer for stage 2 (after another 5 seconds)
+                const growthTimer2 = this.time.delayedCall(5000, () => {
+                    this.growCarrot(cropKey, 2);
+                });
+                this.cropGrowthTimers.set(cropKey + '_stage2', growthTimer2);
+                break;
+
+            case 2:
+                // Fully grown stage (10 seconds total): use carrot stage 3 sprite
+                const matureSprite = this.add.sprite(worldX, worldY - 10, 'carrot_stage3');
+                matureSprite.setOrigin(0.5);
+                matureSprite.setDepth(crop.y); // Same level as tiles
+
+                newSprites.push(matureSprite);
+                break;
+        }
+
+        // Store new sprites
+        this.cropSprites.set(cropKey, newSprites);
     }
 
     private updatePlayerAnimation(isRunning: boolean): void {
