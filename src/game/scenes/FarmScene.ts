@@ -2,6 +2,7 @@ import { Scene } from 'phaser';
 import { EventBus } from '../EventBus';
 import { UIScene } from './UIScene';
 import { SCENE_KEYS } from './SceneKeys';
+import { Enemy } from '../enemies/Enemy';
 
 interface ColliderShape {
     x: number;
@@ -43,6 +44,7 @@ export class FarmScene extends Scene {
 
     // Farming properties
     private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
+    private waterTileIndices: Set<number> = new Set([6, 60, 61, 62, 115, 116, 117, 118]); // Water tile indices
 
     // Player state
     private playerSpeed: number = 150;
@@ -59,8 +61,17 @@ export class FarmScene extends Scene {
     private cows: Phaser.Physics.Arcade.Sprite[] = [];
     private sheep: Phaser.Physics.Arcade.Sprite[] = [];
 
+    // Enemies
+    private enemies: Enemy[] = [];
+
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
+
+    // Player health
+    private playerMaxHp: number = 100;
+    private playerCurrentHp: number = 100;
+    private lastDamageTime: number = 0;
+    private damageInvincibilityDuration: number = 1000; // 1 second invincibility after taking damage
 
     // Background music
     private bgMusic?: Phaser.Sound.BaseSound;
@@ -75,7 +86,6 @@ export class FarmScene extends Scene {
 
     // Settings UI
     private settingsIcon!: Phaser.GameObjects.Image;
-    private settingsModal!: Phaser.GameObjects.Container;
     private isNearNPC: boolean = false;
 
     // Marketplace
@@ -136,6 +146,23 @@ export class FarmScene extends Scene {
             frameHeight: 32
         });
 
+        // Load enemy sprites
+        // Skeleton sprite (192x320, 6 rows x 10 columns = 32x32 per frame)
+        // Rows: 1-idle down, 2-idle side, 3-idle up, 4-walk down, 5-walk side, 6-walk up
+        this.load.spritesheet('skeleton', '../Cute_Fantasy_Free/Enemies/Skeleton.png', {
+            frameWidth: 32,
+            frameHeight: 32
+        });
+
+        // Slime sprite (512x192, 3 rows x 8 columns = 64x64 per frame)
+        // Row 1: frames 0-7 (0-3 idle, 4-7 unused)
+        // Row 2: frames 8-15 (jumping/moving)
+        // Row 3: frames 16-23 (dead animation)
+        this.load.spritesheet('slime', '../Cute_Fantasy_Free/Enemies/Slime_Green.png', {
+            frameWidth: 64,
+            frameHeight: 64
+        });
+
         // Load chatbox image
         this.load.image('chatbox', '../Cute_Fantasy_Free/Player/chatbox.png');
 
@@ -144,6 +171,9 @@ export class FarmScene extends Scene {
 
         // Load settings icon
         this.load.image('settings_icon', '../Cute_Fantasy_Free/Player/player_settings.png');
+
+        // Load heart for HP display
+        this.load.image('heart', '../Cute_Fantasy_Free/Player/heart.png');
 
         // Load particle image
         this.load.image('firefly', 'firefly.png');
@@ -243,12 +273,12 @@ export class FarmScene extends Scene {
         this.chickens = [];
         this.cows = [];
         this.sheep = [];
+        this.enemies = [];
         this.collisionLayers = [];
         this.treeLayers = [];
         this.tileCollisionBodies = new Map();
         this.marketplaceIcon = null as any;
         this.settingsIcon = null as any;
-        this.settingsModal = null as any;
 
         // Debug: Log camera info
         console.log('Camera at create start:', {
@@ -266,11 +296,14 @@ export class FarmScene extends Scene {
         this.createCowAnimations();
         this.createSheepAnimations();
         this.createNPCAnimations();
+        this.createEnemyAnimations();
         this.createPlayer();
         this.createChickens();
         this.createCows();
         this.createSheep();
+        this.createRandomAnimals();
         this.createNPC();
+        this.createEnemies();
         this.setupInputs();
         this.setupCamera();
 
@@ -390,7 +423,7 @@ export class FarmScene extends Scene {
 
         // Click handler
         this.settingsIcon.on('pointerdown', () => {
-            this.openSettingsModal();
+            this.toggleNPCInventory();
         });
 
         // Hover effects
@@ -403,63 +436,13 @@ export class FarmScene extends Scene {
         });
     }
 
-    private openSettingsModal(): void {
-        if (this.settingsModal) {
-            this.settingsModal.setVisible(true);
-            return;
-        }
-
-        // Create modal container
-        this.settingsModal = this.add.container(400, 300);
-        this.settingsModal.setDepth(2000);
-        this.settingsModal.setScrollFactor(0);
-
-        // Semi-transparent background overlay
-        const overlay = this.add.rectangle(0, 0, 800, 600, 0x000000, 0.7);
-        overlay.setOrigin(0.5);
-        overlay.setInteractive();
-
-        // Modal background
-        const modalBg = this.add.rectangle(0, 0, 400, 300, 0xffffff, 1);
-        modalBg.setStrokeStyle(3, 0x000000);
-
-        // Title text
-        const titleText = this.add.text(0, -120, 'Settings', {
-            fontSize: '24px',
-            color: '#000000',
-            fontStyle: 'bold',
-            resolution: 3
-        });
-        titleText.setOrigin(0.5);
-
-        // Close button
-        const closeButton = this.add.text(180, -130, 'X', {
-            fontSize: '20px',
-            color: '#ff0000',
-            fontStyle: 'bold',
-            resolution: 3
-        });
-        closeButton.setOrigin(0.5);
-        closeButton.setInteractive({ useHandCursor: true });
-        closeButton.on('pointerdown', () => {
-            this.closeSettingsModal();
-        });
-        closeButton.on('pointerover', () => {
-            closeButton.setScale(1.2);
-        });
-        closeButton.on('pointerout', () => {
-            closeButton.setScale(1);
-        });
-
-        // Add all elements to modal
-        this.settingsModal.add([overlay, modalBg, titleText, closeButton]);
-    }
-
-    private closeSettingsModal(): void {
-        if (this.settingsModal) {
-            this.settingsModal.setVisible(false);
+    private toggleNPCInventory(): void {
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
+        if (uiScene) {
+            uiScene.toggleNPCTrade();
         }
     }
+
 
     // ===== MARKETPLACE METHODS =====
 
@@ -853,6 +836,16 @@ export class FarmScene extends Scene {
             }
         });
 
+        // Add colliders for enemies
+        this.enemies.forEach(enemy => {
+            if (enemy && enemy.active) {
+                this.physics.add.collider(enemy, collisionGroup);
+            }
+        });
+
+        // Add overlap detection between player and enemies (for damage)
+        this.physics.add.overlap(this.player, this.enemies as any, this.handlePlayerEnemyCollision as any, undefined, this);
+
         // Optional: Debug visualization
         if (false) { // Set to true to see collision shapes
             rectangles.forEach(rect => {
@@ -1147,6 +1140,90 @@ export class FarmScene extends Scene {
         });
     }
 
+    private createEnemyAnimations(): void {
+        // Skeleton animations (192x320, 6 rows x 10 columns, 32x32 per frame)
+        // Row 1 (frames 0-9): idle face down
+        this.anims.create({
+            key: 'skeleton-idle-down',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 0, end: 5 }),
+            frameRate: 8,
+            repeat: -1
+        });
+
+        // Row 2 (frames 10-19): idle face side
+        this.anims.create({
+            key: 'skeleton-idle-side',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 6, end: 11 }),
+            frameRate: 8,
+            repeat: -1
+        });
+
+        // Row 3 (frames 20-29): idle face up
+        this.anims.create({
+            key: 'skeleton-idle-up',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 12, end: 17 }),
+            frameRate: 8,
+            repeat: -1
+        });
+
+        // Row 4 (frames 30-39): walk face down
+        this.anims.create({
+            key: 'skeleton-walk-down',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 18, end: 23 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        // Row 5 (frames 40-49): walk face side
+        this.anims.create({
+            key: 'skeleton-walk-side',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 24, end: 29 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        // Row 6 (frames 50-59): walk face up
+        this.anims.create({
+            key: 'skeleton-walk-up',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 30, end: 35 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        // Row 7 (frames 60-63): dead (only 4 frames)
+        this.anims.create({
+            key: 'skeleton-dead',
+            frames: this.anims.generateFrameNumbers('skeleton', { start: 36, end: 39 }),
+            frameRate: 6,
+            repeat: 0
+        });
+
+        // Slime animations (512x192, 3 rows x 8 columns, 64x64 per frame)
+        // Frames 0-3: idle
+        this.anims.create({
+            key: 'slime-idle',
+            frames: this.anims.generateFrameNumbers('slime', { start: 0, end: 3 }),
+            frameRate: 6,
+            repeat: -1
+        });
+
+        // Frames 8-15: jumping (moving)
+        this.anims.create({
+            key: 'slime-jump',
+            frames: this.anims.generateFrameNumbers('slime', { start: 8, end: 15 }),
+            frameRate: 8,
+            repeat: -1
+        });
+
+        // Frames 16-23: dead
+        this.anims.create({
+            key: 'slime-dead',
+            frames: this.anims.generateFrameNumbers('slime', { start: 16, end: 23 }),
+            frameRate: 8,
+            repeat: 0
+        });
+    }
+
     private createPlayer(): void {
         // Spawn player at center of map (400, 400 for 800x800 farm map)
         this.player = this.physics.add.sprite(400, 400, 'player', 0);
@@ -1264,6 +1341,86 @@ export class FarmScene extends Scene {
         }
     }
 
+    private createRandomAnimals(): void {
+        // Spawn random animals at random positions across the map
+        const totalAnimals = Phaser.Math.Between(8, 15); // Random number of animals
+        const mapWidth = this.map.widthInPixels;
+        const mapHeight = this.map.heightInPixels;
+        
+        for (let i = 0; i < totalAnimals; i++) {
+            // Random position on the map (avoiding edges)
+            const x = Phaser.Math.Between(100, mapWidth - 100);
+            const y = Phaser.Math.Between(100, mapHeight - 100);
+            
+            // Randomly choose animal type: 0 = chicken, 1 = cow, 2 = sheep
+            const animalType = Phaser.Math.Between(0, 2);
+            
+            if (animalType === 0) {
+                // Create chicken
+                const chicken = this.physics.add.sprite(x, y, 'chicken', 0);
+                chicken.setScale(1.5);
+                chicken.play('chicken-idle');
+                chicken.setDepth(100);
+                chicken.setData('health', 3);
+                chicken.setData('maxHealth', 3);
+                chicken.setData('fenceBounds', { 
+                    minX: x - 100, maxX: x + 100, 
+                    minY: y - 100, maxY: y + 100 
+                });
+                this.chickens.push(chicken);
+                
+                const movementTimer = this.time.addEvent({
+                    delay: Phaser.Math.Between(2000, 4000),
+                    callback: () => this.moveAnimalRandomly(chicken, 'chicken'),
+                    loop: true
+                });
+                chicken.setData('movementTimer', movementTimer);
+                
+            } else if (animalType === 1) {
+                // Create cow
+                const cow = this.physics.add.sprite(x, y, 'cow', 0);
+                cow.setScale(1.5);
+                cow.play('cow-idle');
+                cow.setDepth(100);
+                cow.setData('health', 5);
+                cow.setData('maxHealth', 5);
+                cow.setData('fenceBounds', { 
+                    minX: x - 100, maxX: x + 100, 
+                    minY: y - 100, maxY: y + 100 
+                });
+                this.cows.push(cow);
+                
+                const movementTimer = this.time.addEvent({
+                    delay: Phaser.Math.Between(2000, 4000),
+                    callback: () => this.moveAnimalRandomly(cow, 'cow'),
+                    loop: true
+                });
+                cow.setData('movementTimer', movementTimer);
+                
+            } else {
+                // Create sheep
+                const sheep = this.physics.add.sprite(x, y, 'sheep', 0);
+                sheep.setScale(1.5);
+                sheep.play('sheep-idle');
+                sheep.setDepth(100);
+                sheep.setData('health', 3);
+                sheep.setData('maxHealth', 3);
+                sheep.setData('fenceBounds', { 
+                    minX: x - 100, maxX: x + 100, 
+                    minY: y - 100, maxY: y + 100 
+                });
+                this.sheep.push(sheep);
+                
+                const movementTimer = this.time.addEvent({
+                    delay: Phaser.Math.Between(2000, 4000),
+                    callback: () => this.moveAnimalRandomly(sheep, 'sheep'),
+                    loop: true
+                });
+                sheep.setData('movementTimer', movementTimer);
+            }
+        }
+    }
+
     private createNPC(): void {
         // Spawn NPC at position (300, 400) using npc sprite
         this.npc = this.physics.add.sprite(300, 400, 'npc', 0);
@@ -1298,6 +1455,30 @@ export class FarmScene extends Scene {
 
         // Set up patrol behavior
         this.setupNPCPatrol();
+    }
+
+    private createEnemies(): void {
+        // Spawn some skeletons in different areas of the map
+        // Skeleton 1 - Near the right side of map
+        const skeleton1 = new Enemy(this, 600, 300, 'skeleton', 'skeleton', 30, 10, 50);
+        this.enemies.push(skeleton1);
+
+        // Skeleton 2 - Lower area
+        const skeleton2 = new Enemy(this, 500, 500, 'skeleton', 'skeleton', 30, 10, 50);
+        this.enemies.push(skeleton2);
+
+        // Spawn some slimes
+        // Slime 1 - Upper right
+        const slime1 = new Enemy(this, 650, 200, 'slime', 'slime', 20, 5, 30);
+        this.enemies.push(slime1);
+
+        // Slime 2 - Lower left
+        const slime2 = new Enemy(this, 250, 550, 'slime', 'slime', 20, 5, 30);
+        this.enemies.push(slime2);
+
+        // Slime 3 - Middle area
+        const slime3 = new Enemy(this, 450, 350, 'slime', 'slime', 20, 5, 30);
+        this.enemies.push(slime3);
     }
 
     private moveAnimalRandomly(animal: Phaser.Physics.Arcade.Sprite, animalType: 'chicken' | 'cow' | 'sheep'): void {
@@ -1621,6 +1802,80 @@ export class FarmScene extends Scene {
         this.updatePlayerAnimation(isRunning);
     }
 
+    private handlePlayerEnemyCollision(
+        player: Phaser.GameObjects.GameObject | Phaser.Tilemaps.Tile,
+        enemy: Phaser.GameObjects.GameObject | Phaser.Tilemaps.Tile
+    ): void {
+        const enemySprite = enemy as Enemy;
+        
+        // Check if enemy is dead
+        if (enemySprite.getIsDead()) {
+            return;
+        }
+
+        // Check invincibility timer
+        const currentTime = this.time.now;
+        if (currentTime - this.lastDamageTime < this.damageInvincibilityDuration) {
+            return;
+        }
+
+        // Apply damage to player
+        const damage = enemySprite.getDamage();
+        this.playerCurrentHp -= damage;
+        this.lastDamageTime = currentTime;
+
+        // Flash player red
+        this.player.setTint(0xff0000);
+        this.time.delayedCall(200, () => {
+            this.player.clearTint();
+        });
+
+        // Update UI with player HP
+        EventBus.emit('player-hp-changed', {
+            current: this.playerCurrentHp,
+            max: this.playerMaxHp
+        });
+
+        console.log(`Player hit! HP: ${this.playerCurrentHp}/${this.playerMaxHp}`);
+
+        // Check if player died
+        if (this.playerCurrentHp <= 0) {
+            this.handlePlayerDeath();
+        }
+
+        // Knockback effect
+        const knockbackSpeed = 200;
+        const angle = Phaser.Math.Angle.Between(
+            enemySprite.x,
+            enemySprite.y,
+            this.player.x,
+            this.player.y
+        );
+        this.player.setVelocity(
+            Math.cos(angle) * knockbackSpeed,
+            Math.sin(angle) * knockbackSpeed
+        );
+    }
+
+    private handlePlayerDeath(): void {
+        console.log('Player died!');
+        this.playerCurrentHp = 0;
+        
+        // Stop player movement
+        this.player.setVelocity(0, 0);
+        
+        // You could add death animation or respawn logic here
+        // For now, just respawn after a delay
+        this.time.delayedCall(2000, () => {
+            this.playerCurrentHp = this.playerMaxHp;
+            this.player.setPosition(400, 400);
+            EventBus.emit('player-hp-changed', {
+                current: this.playerCurrentHp,
+                max: this.playerMaxHp
+            });
+        });
+    }
+
     private handleInteraction(): void {
         this.interactKey.on('down', () => {
             const playerTileX = this.farmingLayer.worldToTileX(this.player.x);
@@ -1731,6 +1986,20 @@ export class FarmScene extends Scene {
 
             if (distance < attackRange) {
                 this.damageAnimal(sheepAnimal, 'sheep');
+            }
+        });
+
+        // Check enemies
+        this.enemies.forEach(enemy => {
+            if (!enemy.active || enemy.getIsDead()) return;
+
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x, this.player.y,
+                enemy.x, enemy.y
+            );
+
+            if (distance < attackRange) {
+                enemy.takeDamage(10); // Player deals 10 damage per attack
             }
         });
     }
@@ -1974,7 +2243,7 @@ export class FarmScene extends Scene {
         this.player.setData('chatboxIndicator', chatboxIndicator);
 
         // Create player's chat bubble with chatdialog image
-        const playerBubble = this.add.container(this.player.x, this.player.y - 10);
+        const playerBubble = this.add.container(this.player.x, this.player.y - 5);
         playerBubble.setDepth(2000);
 
         // Add chatdialog image

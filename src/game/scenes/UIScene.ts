@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './SceneKeys';
+import { EventBus } from '../EventBus';
 // 1. First, let's update the Slot interface at the top of the file
 interface Slot {
     bg: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
@@ -13,7 +14,14 @@ interface Slot {
 
 export class UIScene extends Phaser.Scene {
     #hudContainer!: Phaser.GameObjects.Container;
-    #hearts!: Phaser.GameObjects.Sprite[];
+    #hearts!: Phaser.GameObjects.Image[];
+    #hpText!: Phaser.GameObjects.Text;
+    
+    // HP Bar properties (deprecated, keeping for compatibility)
+    private hpBarBackground!: Phaser.GameObjects.Graphics;
+    private hpBarFill!: Phaser.GameObjects.Graphics;
+    private hpText!: Phaser.GameObjects.Text;
+    
     private itemBarContainer!: Phaser.GameObjects.Container;
     private slots: Slot[] = [];
     private selectedIndex: number = 0;
@@ -79,6 +87,22 @@ export class UIScene extends Phaser.Scene {
     private isFullscreen: boolean = false;
     private musicVolume: number = 0.5;
 
+    // NPC Trade Inventory properties
+    private npcTradeContainer!: Phaser.GameObjects.Container;
+    private npcTradeVisible: boolean = false;
+    private npcLeftSlots: Slot[] = [];
+    private npcRightSlots: Slot[] = [];
+    private npcTradeOverlay!: Phaser.GameObjects.Rectangle;
+    private readonly NPC_TRADE_SLOTS_PER_SIDE = 5;
+    private npcTradeLocked: boolean = false;
+    private npcCancelButton?: Phaser.GameObjects.Text;
+    private npcAcceptButton?: Phaser.GameObjects.Text;
+    private npcPlayerTick?: Phaser.GameObjects.Text;
+    private npcHermanTick?: Phaser.GameObjects.Text;
+    private npcHermanItems: string[] = ['potion_01a', 'fish_01a', 'candy_01a', 'helmet_01a']; // Hardcoded items for Herman
+    private npcConfirmModal?: Phaser.GameObjects.Container;
+    private npcConfirmOverlay?: Phaser.GameObjects.Rectangle;
+
     // Marketplace item data
     private readonly MARKETPLACE_ITEMS = {
         Weapons: ['sword_01a', 'sword_01b', 'sword_01c', 'sword_01d', 'sword_01e', 'sword_02a', 'sword_02b', 'sword_02c', 'sword_02d', 'sword_02e', 'bow_01a', 'bow_01b', 'bow_01d', 'bow_01e', 'bow_02a', 'bow_02b', 'bow_02d', 'bow_02e', 'arrow_01a', 'arrow_01b', 'arrow_02a', 'arrow_02b', 'shield_01a', 'shield_01b', 'shield_02a', 'shield_02b', 'staff_01a', 'staff_01b', 'spellbook_01a', 'spellbook_01b'],
@@ -111,11 +135,14 @@ export class UIScene extends Phaser.Scene {
         this.backpackVisible = false;
         this.guideMenuVisible = false;
         this.settingsMenuVisible = false;
+        this.npcTradeVisible = false;
         this.selectedMarketplaceSlot = -1;
         this.guideMenuContainer = undefined;
         this.guideMenuOverlay = undefined;
         this.settingsMenuContainer = undefined;
         this.settingsMenuOverlay = undefined;
+        this.npcLeftSlots = [];
+        this.npcRightSlots = [];
 
         // Create main HUD container with high depth
         this.#hudContainer = this.add.container(0, 0).setDepth(10000);
@@ -124,6 +151,9 @@ export class UIScene extends Phaser.Scene {
 
         // Create item bar
         this.createItemBar();
+
+        // Create HP bar
+        this.createHPBar();
 
         // Handle window resize with proper context binding
         this.scale.on('resize', this.handleResize, this);
@@ -160,10 +190,20 @@ export class UIScene extends Phaser.Scene {
 
     public showUI(): void {
         this.#hudContainer.setVisible(true);
+        this.showHPBar();
     }
 
     public hideUI(): void {
         this.#hudContainer.setVisible(false);
+        this.hideHPBar();
+    }
+
+    private showHPBar(): void {
+        this.#hearts.forEach(heart => heart.setVisible(true));
+    }
+
+    private hideHPBar(): void {
+        this.#hearts.forEach(heart => heart.setVisible(false));
     }
 
     private createItemBar(): void {
@@ -235,6 +275,57 @@ export class UIScene extends Phaser.Scene {
                 .setDepth(200);
         }
         this.itemBarContainer.add(this.selectionIndicator);
+    }
+
+    private createHPBar(): void {
+        // Create hearts display (10 hearts for 100 HP)
+        this.#hearts = [];
+        const startX = 20;
+        const startY = 30;
+        const heartSpacing = 30; // Decreased space between hearts
+        const heartScale = 0.06; // Even bigger scale from 900x565
+        
+        // HP text removed - hearts only
+        
+        // Create 10 hearts
+        for (let i = 0; i < 10; i++) {
+            const heart = this.add.image(
+                startX + (i * heartSpacing) + 15,
+                startY,
+                'heart'
+            );
+            heart.setScale(heartScale);
+            heart.setDepth(10003);
+            heart.setScrollFactor(0);
+            this.#hearts.push(heart);
+        }
+
+        // Listen for HP changes from FarmScene via EventBus
+        EventBus.on('player-hp-changed', this.updateHPBar, this);
+
+        // Initialize with full HP
+        this.updateHPBar({ current: 100, max: 100 });
+    }
+
+    private updateHPBar(data: { current: number; max: number }): void {
+        // Each heart represents 10 HP
+        const heartsToShow = Math.ceil(data.current / 10);
+        
+        // Update each heart visibility and alpha
+        this.#hearts.forEach((heart, index) => {
+            if (index < heartsToShow) {
+                heart.setVisible(true);
+                // If this is the last heart and HP is not full for this heart, make it partially transparent
+                const hpForThisHeart = data.current - (index * 10);
+                if (hpForThisHeart < 10 && hpForThisHeart > 0) {
+                    heart.setAlpha(hpForThisHeart / 10);
+                } else {
+                    heart.setAlpha(1);
+                }
+            } else {
+                heart.setVisible(false);
+            }
+        });
     }
 
     private setupKeys(): void {
@@ -847,6 +938,25 @@ export class UIScene extends Phaser.Scene {
         }
         this.input.off('pointermove', this.updateHeldItemPosition, this);
         this.heldItem = null;
+    }
+
+    // ===== PUBLIC METHODS FOR EXTERNAL ACCESS =====
+
+    public getHeldItem(): { itemId: string; itemType?: string; count: number } | null {
+        return this.heldItem;
+    }
+
+    public setHeldItem(itemId: string, itemType: string, count: number): void {
+        this.heldItem = { itemId, itemType, count };
+        this.createHeldItemGhost();
+    }
+
+    public clearHeldItemPublic(): void {
+        this.clearHeldItem();
+    }
+
+    public createHeldItemGhostPublic(): void {
+        this.createHeldItemGhost();
     }
 
     // ===== OLD DRAG SYSTEM (KEPT FOR COMPATIBILITY) =====
@@ -1485,6 +1595,876 @@ export class UIScene extends Phaser.Scene {
             this.hideMarketplace();
         } else {
             this.showMarketplace();
+        }
+    }
+
+    // ===== NPC TRADE INVENTORY METHODS =====
+
+    public showNPCTrade(): void {
+        if (!this.npcTradeContainer) {
+            this.createNPCTrade();
+        }
+        
+        this.npcTradeVisible = true;
+        this.npcTradeLocked = false;
+        this.npcTradeContainer.setVisible(true);
+        this.npcTradeOverlay.setVisible(true);
+        
+        // Hide marketplace if open
+        if (this.marketplaceVisible) {
+            this.hideMarketplace();
+        }
+        
+        // Auto-open backpack in the middle
+        if (!this.backpackVisible) {
+            this.showBackpack();
+        }
+    }
+
+    public hideNPCTrade(): void {
+        this.npcTradeVisible = false;
+        this.npcTradeLocked = false;
+        
+        if (this.npcTradeContainer) {
+            this.npcTradeContainer.setVisible(false);
+        }
+        if (this.npcTradeOverlay) {
+            this.npcTradeOverlay.setVisible(false);
+        }
+        
+        // Close backpack when closing NPC trade
+        if (this.backpackVisible) {
+            this.hideBackpack();
+        }
+    }
+
+    public toggleNPCTrade(): void {
+        if (this.npcTradeVisible) {
+            this.hideNPCTrade();
+        } else {
+            this.showNPCTrade();
+        }
+    }
+
+    public isNPCTradeOpen(): boolean {
+        return this.npcTradeVisible;
+    }
+
+    private createNPCTrade(): void {
+        // Create container
+        this.npcTradeContainer = this.add.container(0, 0);
+        this.npcTradeContainer.setScrollFactor(0);
+        this.npcTradeContainer.setDepth(28000);
+        this.npcTradeContainer.setVisible(false);
+
+        const screenCenterX = this.cameras.main.width / 2;
+        const screenCenterY = this.cameras.main.height / 2;
+
+        // Create semi-transparent overlay (non-interactive so dragging works)
+        this.npcTradeOverlay = this.add.rectangle(screenCenterX, screenCenterY, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.5);
+        this.npcTradeOverlay.setScrollFactor(0);
+        this.npcTradeOverlay.setDepth(27000); // Lower depth so backpack can be interacted with
+        this.npcTradeOverlay.setVisible(false);
+        // No setInteractive() so it doesn't block clicks/drags
+
+        const slotSize = 64; // Bigger slots (was 48)
+        const spacing = 12; // More spacing
+
+        // Add tick mark for player (hidden initially)
+        const playerTickY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2 - 110;
+        this.npcPlayerTick = this.add.text(80, playerTickY, '✓', {
+            fontSize: '40px',
+            color: '#00ff00',
+            fontStyle: 'bold'
+        });
+        this.npcPlayerTick.setOrigin(0.5);
+        this.npcPlayerTick.setScrollFactor(0);
+        this.npcPlayerTick.setDepth(28001);
+        this.npcPlayerTick.setVisible(false);
+        this.npcTradeContainer.add(this.npcPlayerTick);
+
+        // Add "Your\nOffer" label above left slots
+        const leftLabelY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2 - 70;
+        const leftLabel = this.add.text(80, leftLabelY, 'Your\nOffer', {
+            fontSize: '20px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 3,
+            align: 'center'
+        });
+        leftLabel.setOrigin(0.5);
+        leftLabel.setScrollFactor(0);
+        leftLabel.setDepth(28001);
+        this.npcTradeContainer.add(leftLabel);
+
+        // Add tick mark for Herman (hidden initially)
+        const hermanTickY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2 - 110;
+        this.npcHermanTick = this.add.text(this.cameras.main.width - 80, hermanTickY, '✓', {
+            fontSize: '40px',
+            color: '#00ff00',
+            fontStyle: 'bold'
+        });
+        this.npcHermanTick.setOrigin(0.5);
+        this.npcHermanTick.setScrollFactor(0);
+        this.npcHermanTick.setDepth(28001);
+        this.npcHermanTick.setVisible(false);
+        this.npcTradeContainer.add(this.npcHermanTick);
+
+        // Add "Herman's\nOffer" label above right slots
+        const rightLabelY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2 - 70;
+        const rightLabel = this.add.text(this.cameras.main.width - 80, rightLabelY, "Herman's\nOffer", {
+            fontSize: '20px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 3,
+            align: 'center'
+        });
+        rightLabel.setOrigin(0.5);
+        rightLabel.setScrollFactor(0);
+        rightLabel.setDepth(28001);
+        this.npcTradeContainer.add(rightLabel);
+
+        // Create 5 slots on the left side
+        const leftStartY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2;
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const x = 80; // More margin from left
+            const y = leftStartY + i * (slotSize + spacing);
+            
+            const slotBg = this.add.image(x, y, 'slot');
+            slotBg.setOrigin(0.5);
+            slotBg.setScale(1.35); // Scale up slot
+            slotBg.setScrollFactor(0);
+            slotBg.setDepth(28001);
+
+            const slot: Slot = {
+                bg: slotBg,
+                x: x,
+                y: y
+            };
+            this.npcLeftSlots.push(slot);
+            this.npcTradeContainer.add(slotBg);
+            this.makeNPCSlotInteractive(slotBg, i, 'left');
+        }
+
+        // Create 5 slots on the right side
+        const rightStartY = screenCenterY - (this.NPC_TRADE_SLOTS_PER_SIDE * slotSize + (this.NPC_TRADE_SLOTS_PER_SIDE - 1) * spacing) / 2;
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const x = this.cameras.main.width - 80; // More margin from right
+            const y = rightStartY + i * (slotSize + spacing);
+            
+            const slotBg = this.add.image(x, y, 'slot');
+            slotBg.setOrigin(0.5);
+            slotBg.setScale(1.35); // Scale up slot
+            slotBg.setScrollFactor(0);
+            slotBg.setDepth(28001);
+
+            const slot: Slot = {
+                bg: slotBg,
+                x: x,
+                y: y
+            };
+            this.npcRightSlots.push(slot);
+            this.npcTradeContainer.add(slotBg);
+            this.makeNPCSlotInteractive(slotBg, i, 'right');
+        }
+
+        // Create Cancel button (left side, below slots)
+        const cancelButtonY = leftStartY + this.NPC_TRADE_SLOTS_PER_SIDE * (slotSize + spacing) + 30;
+        const cancelBg = this.add.rectangle(80, cancelButtonY, 120, 40, 0xff4444);
+        cancelBg.setStrokeStyle(2, 0x000000);
+        cancelBg.setScrollFactor(0);
+        cancelBg.setDepth(28001);
+        cancelBg.setInteractive({ useHandCursor: true });
+
+        this.npcCancelButton = this.add.text(80, cancelButtonY, 'Cancel', {
+            fontSize: '18px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        });
+        this.npcCancelButton.setOrigin(0.5);
+        this.npcCancelButton.setScrollFactor(0);
+        this.npcCancelButton.setDepth(28002);
+
+        this.npcTradeContainer.add([cancelBg, this.npcCancelButton]);
+
+        // Cancel button click
+        cancelBg.on('pointerdown', () => {
+            this.handleCancelTrade();
+        });
+        cancelBg.on('pointerover', () => {
+            cancelBg.setFillStyle(0xff6666);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        cancelBg.on('pointerout', () => {
+            cancelBg.setFillStyle(0xff4444);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+
+        // Create Accept button (right side, below slots)
+        const acceptButtonY = rightStartY + this.NPC_TRADE_SLOTS_PER_SIDE * (slotSize + spacing) + 30;
+        const acceptBg = this.add.rectangle(this.cameras.main.width - 80, acceptButtonY, 120, 40, 0x44ff44);
+        acceptBg.setStrokeStyle(2, 0x000000);
+        acceptBg.setScrollFactor(0);
+        acceptBg.setDepth(28001);
+        acceptBg.setInteractive({ useHandCursor: true });
+
+        this.npcAcceptButton = this.add.text(this.cameras.main.width - 80, acceptButtonY, 'Accept', {
+            fontSize: '18px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        });
+        this.npcAcceptButton.setOrigin(0.5);
+        this.npcAcceptButton.setScrollFactor(0);
+        this.npcAcceptButton.setDepth(28002);
+
+        this.npcTradeContainer.add([acceptBg, this.npcAcceptButton]);
+
+        // Accept button click
+        acceptBg.on('pointerdown', () => {
+            this.handleAcceptTrade();
+        });
+        acceptBg.on('pointerover', () => {
+            acceptBg.setFillStyle(0x66ff66);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        acceptBg.on('pointerout', () => {
+            acceptBg.setFillStyle(0x44ff44);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+    }
+
+    private makeNPCSlotInteractive(slotBg: Phaser.GameObjects.Image, slotIndex: number, side: 'left' | 'right'): void {
+        slotBg.setInteractive();
+        
+        slotBg.on('pointerover', () => {
+            // Don't allow interaction with left slots when locked
+            if (this.npcTradeLocked && side === 'left') return;
+            if (!this.npcTradeLocked) {
+                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+                slotBg.setTint(0xcccccc);
+            }
+        });
+        
+        slotBg.on('pointerout', () => {
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+            slotBg.clearTint();
+        });
+
+        slotBg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            // Don't allow interaction with left slots when locked
+            if (this.npcTradeLocked && side === 'left') return;
+            // Don't allow interaction with right slots (Herman's side) at all
+            if (side === 'right') return;
+            
+            if (pointer.leftButtonDown()) {
+                this.handleNPCSlotClick(slotIndex, side);
+            } else if (pointer.rightButtonDown()) {
+                this.handleNPCSlotRightClick(slotIndex, side);
+            }
+        });
+    }
+
+    private handleNPCSlotClick(slotIndex: number, side: 'left' | 'right'): void {
+        const slot = side === 'left' ? this.npcLeftSlots[slotIndex] : this.npcRightSlots[slotIndex];
+        if (!slot) return;
+
+        // Empty hand + slot with items → Pick up entire stack
+        if (!this.heldItem && slot.itemId) {
+            const count = slot.countText ? parseInt(slot.countText.text) : 1;
+            this.pickupNPCItem(slot, slotIndex, side, count);
+        }
+        // Holding items + empty slot → Place entire stack
+        else if (this.heldItem && !slot.itemId) {
+            this.placeNPCItem(slot, slotIndex, side, this.heldItem.count);
+        }
+        // Holding items + slot with same item → Merge stacks
+        else if (this.heldItem && slot.itemId === this.heldItem.itemId) {
+            this.mergeNPCStacks(slot, slotIndex, side);
+        }
+        // Holding items + slot with different item → Swap items
+        else if (this.heldItem && slot.itemId && slot.itemId !== this.heldItem.itemId) {
+            this.swapNPCItems(slot, slotIndex, side);
+        }
+    }
+
+    private handleNPCSlotRightClick(slotIndex: number, side: 'left' | 'right'): void {
+        const slot = side === 'left' ? this.npcLeftSlots[slotIndex] : this.npcRightSlots[slotIndex];
+        if (!slot) return;
+
+        // Empty hand + slot with items → Pick up half stack
+        if (!this.heldItem && slot.itemId) {
+            const count = slot.countText ? parseInt(slot.countText.text) : 1;
+            const halfCount = Math.ceil(count / 2);
+            this.pickupNPCItem(slot, slotIndex, side, halfCount);
+        }
+        // Holding items + empty slot → Place 1 item
+        else if (this.heldItem && !slot.itemId) {
+            this.placeNPCItem(slot, slotIndex, side, 1);
+        }
+        // Holding items + slot with same item → Add 1 item (if < 99)
+        else if (this.heldItem && slot.itemId === this.heldItem.itemId) {
+            const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+            if (currentCount < this.MAX_STACK_SIZE) {
+                this.placeNPCItem(slot, slotIndex, side, 1);
+            }
+        }
+    }
+
+    private pickupNPCItem(slot: Slot, slotIndex: number, side: 'left' | 'right', count: number): void {
+        if (!slot.itemId) return;
+
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+        const pickupCount = Math.min(count, currentCount);
+        const remainingCount = currentCount - pickupCount;
+
+        // Create held item
+        this.heldItem = {
+            itemId: slot.itemId,
+            itemType: slot.itemType,
+            count: pickupCount
+        };
+
+        this.createHeldItemGhost();
+
+        // Update or clear slot
+        if (remainingCount > 0) {
+            this.addItemToNPCSlot(slot.itemId, slotIndex, side, slot.itemType, remainingCount);
+        } else {
+            this.clearNPCSlot(slotIndex, side);
+        }
+    }
+
+    private placeNPCItem(slot: Slot, slotIndex: number, side: 'left' | 'right', count: number): void {
+        if (!this.heldItem) return;
+
+        const placeCount = Math.min(count, this.heldItem.count);
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 0;
+        const newCount = currentCount + placeCount;
+
+        if (newCount > this.MAX_STACK_SIZE) return;
+
+        this.addItemToNPCSlot(this.heldItem.itemId, slotIndex, side, this.heldItem.itemType, newCount);
+
+        this.heldItem.count -= placeCount;
+        if (this.heldItem.count <= 0) {
+            this.clearHeldItem();
+        } else {
+            this.updateHeldItemGhost();
+        }
+    }
+
+    private mergeNPCStacks(slot: Slot, slotIndex: number, side: 'left' | 'right'): void {
+        if (!this.heldItem || !slot.itemId || slot.itemId !== this.heldItem.itemId) return;
+
+        const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
+        const spaceAvailable = this.MAX_STACK_SIZE - currentCount;
+        const transferCount = Math.min(this.heldItem.count, spaceAvailable);
+
+        if (transferCount > 0) {
+            this.addItemToNPCSlot(slot.itemId, slotIndex, side, slot.itemType, currentCount + transferCount);
+            this.heldItem.count -= transferCount;
+
+            if (this.heldItem.count <= 0) {
+                this.clearHeldItem();
+            } else {
+                this.updateHeldItemGhost();
+            }
+        }
+    }
+
+    private swapNPCItems(slot: Slot, slotIndex: number, side: 'left' | 'right'): void {
+        if (!this.heldItem || !slot.itemId) return;
+
+        const slotItemId = slot.itemId;
+        const slotItemType = slot.itemType;
+        const slotCount = slot.countText ? parseInt(slot.countText.text) : 1;
+
+        // Place held item in slot
+        this.addItemToNPCSlot(this.heldItem.itemId, slotIndex, side, this.heldItem.itemType, this.heldItem.count);
+
+        // Pick up slot item
+        this.heldItem = {
+            itemId: slotItemId,
+            itemType: slotItemType,
+            count: slotCount
+        };
+
+        this.updateHeldItemGhost();
+    }
+
+    private addItemToNPCSlot(itemId: string, slotIndex: number, side: 'left' | 'right', itemType: string = 'item', count: number = 1): void {
+        const slot = side === 'left' ? this.npcLeftSlots[slotIndex] : this.npcRightSlots[slotIndex];
+        if (!slot) return;
+
+        // Remove existing item if any
+        if (slot.itemImage) {
+            slot.itemImage.destroy();
+        }
+        if (slot.countText) {
+            slot.countText.destroy();
+        }
+
+        // Add item image with bigger display size for larger slots
+        if (this.textures.exists(itemId)) {
+            slot.itemImage = this.add.image(slot.x, slot.y, itemId)
+                .setDisplaySize(48, 48) // Bigger items (was 32x32)
+                .setOrigin(0.5, 0.5)
+                .setScrollFactor(0)
+                .setDepth(28002);
+            this.npcTradeContainer.add(slot.itemImage);
+        }
+
+        // Add item count if more than 1
+        if (count > 1) {
+            slot.countText = this.add.text(
+                slot.x + 24, // Adjusted for bigger slot
+                slot.y + 24,
+                count.toString(),
+                {
+                    fontSize: '18px', // Bigger font
+                    color: '#ffffff',
+                    fontStyle: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3,
+                    padding: { x: 2, y: 1 }
+                }
+            ).setOrigin(1, 1)
+                .setScrollFactor(0)
+                .setDepth(28003);
+
+            this.npcTradeContainer.add(slot.countText);
+        }
+
+        // Store item data
+        slot.itemId = itemId;
+        slot.itemType = itemType;
+    }
+
+    private clearNPCSlot(slotIndex: number, side: 'left' | 'right'): void {
+        const slot = side === 'left' ? this.npcLeftSlots[slotIndex] : this.npcRightSlots[slotIndex];
+        if (!slot) return;
+
+        if (slot.itemImage) {
+            slot.itemImage.destroy();
+            slot.itemImage = undefined;
+        }
+        if (slot.countText) {
+            slot.countText.destroy();
+            slot.countText = undefined;
+        }
+        slot.itemId = undefined;
+        slot.itemType = undefined;
+    }
+
+    private showTradeConfirmationModal(): void {
+        const screenCenterX = this.cameras.main.width / 2;
+        const screenCenterY = this.cameras.main.height / 2;
+
+        // Create overlay
+        this.npcConfirmOverlay = this.add.rectangle(screenCenterX, screenCenterY, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.7);
+        this.npcConfirmOverlay.setScrollFactor(0);
+        this.npcConfirmOverlay.setDepth(29000);
+        this.npcConfirmOverlay.setInteractive();
+
+        // Create modal container
+        this.npcConfirmModal = this.add.container(screenCenterX, screenCenterY);
+        this.npcConfirmModal.setScrollFactor(0);
+        this.npcConfirmModal.setDepth(29001);
+
+        // Modal background with theme colors (beige/cream background)
+        const modalBg = this.add.rectangle(0, 0, 600, 550, 0xf5e6d3, 1);
+        modalBg.setStrokeStyle(6, 0x8b6f47); // Brown border
+
+        // Decorative inner border
+        const innerBorder = this.add.rectangle(0, 0, 580, 530, 0x000000, 0);
+        innerBorder.setStrokeStyle(2, 0xd4a574);
+
+        // Title with decorative background
+        const titleBg = this.add.rectangle(0, -210, 400, 50, 0x8b6f47);
+        const title = this.add.text(0, -210, 'Confirm Trade', {
+            fontSize: '32px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            fontFamily: 'Arial'
+        });
+        title.setOrigin(0.5);
+
+        // Get items from left slots (giving)
+        const givingItems: { id: string; count: number }[] = [];
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const slot = this.npcLeftSlots[i];
+            if (slot && slot.itemId) {
+                const count = slot.countText ? parseInt(slot.countText.text) : 1;
+                givingItems.push({ id: slot.itemId, count });
+            }
+        }
+
+        // Get items from right slots (receiving)
+        const receivingItems: { id: string; count: number }[] = [];
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const slot = this.npcRightSlots[i];
+            if (slot && slot.itemId) {
+                const count = slot.countText ? parseInt(slot.countText.text) : 1;
+                receivingItems.push({ id: slot.itemId, count });
+            }
+        }
+
+        // You will give section
+        const giveLabel = this.add.text(0, -140, 'You will give:', {
+            fontSize: '22px',
+            color: '#8b4513',
+            fontStyle: 'bold'
+        });
+        giveLabel.setOrigin(0.5);
+
+        // Display giving items with images
+        const giveItemsContainer = this.add.container(-250, -90);
+        givingItems.forEach((item, index) => {
+            const xPos = (index % 4) * 70;
+            const yPos = Math.floor(index / 4) * 70;
+            
+            // Item slot background
+            const itemSlot = this.add.image(xPos, yPos, 'slot');
+            itemSlot.setScale(0.8);
+            giveItemsContainer.add(itemSlot);
+            
+            // Item image
+            if (this.textures.exists(item.id)) {
+                const itemImage = this.add.image(xPos, yPos, item.id);
+                itemImage.setDisplaySize(36, 36);
+                giveItemsContainer.add(itemImage);
+            }
+            
+            // Item count
+            if (item.count > 1) {
+                const countText = this.add.text(xPos + 16, yPos + 16, item.count.toString(), {
+                    fontSize: '14px',
+                    color: '#ffffff',
+                    fontStyle: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                });
+                countText.setOrigin(1, 1);
+                giveItemsContainer.add(countText);
+            }
+        });
+
+        // "Nothing" text if no items
+        if (givingItems.length === 0) {
+            const nothingText = this.add.text(0, -90, 'Nothing', {
+                fontSize: '18px',
+                color: '#999999',
+                fontStyle: 'italic'
+            });
+            nothingText.setOrigin(0.5);
+            this.npcConfirmModal.add(nothingText);
+        }
+
+        // Divider line
+        const divider = this.add.rectangle(0, 20, 500, 3, 0x8b6f47);
+
+        // You will receive section
+        const receiveLabel = this.add.text(0, 50, 'You will receive:', {
+            fontSize: '22px',
+            color: '#2d5016',
+            fontStyle: 'bold'
+        });
+        receiveLabel.setOrigin(0.5);
+
+        // Display receiving items with images
+        const receiveItemsContainer = this.add.container(-250, 100);
+        receivingItems.forEach((item, index) => {
+            const xPos = (index % 4) * 70;
+            const yPos = Math.floor(index / 4) * 70;
+            
+            // Item slot background
+            const itemSlot = this.add.image(xPos, yPos, 'slot');
+            itemSlot.setScale(0.8);
+            receiveItemsContainer.add(itemSlot);
+            
+            // Item image
+            if (this.textures.exists(item.id)) {
+                const itemImage = this.add.image(xPos, yPos, item.id);
+                itemImage.setDisplaySize(36, 36);
+                receiveItemsContainer.add(itemImage);
+            }
+            
+            // Item count
+            if (item.count > 1) {
+                const countText = this.add.text(xPos + 16, yPos + 16, item.count.toString(), {
+                    fontSize: '14px',
+                    color: '#ffffff',
+                    fontStyle: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                });
+                countText.setOrigin(1, 1);
+                receiveItemsContainer.add(countText);
+            }
+        });
+
+        // "Nothing" text if no items
+        if (receivingItems.length === 0) {
+            const nothingText = this.add.text(0, 100, 'Nothing', {
+                fontSize: '18px',
+                color: '#999999',
+                fontStyle: 'italic'
+            });
+            nothingText.setOrigin(0.5);
+            this.npcConfirmModal.add(nothingText);
+        }
+
+        // Cancel button with theme styling
+        const cancelBg = this.add.rectangle(-120,220, 180, 60, 0xc94c4c);
+        cancelBg.setStrokeStyle(3, 0x8b0000);
+        cancelBg.setInteractive({ useHandCursor: true });
+
+        const cancelText = this.add.text(-120, 220, 'Cancel', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        });
+        cancelText.setOrigin(0.5);
+
+        cancelBg.on('pointerdown', () => {
+            this.hideTradeConfirmationModal();
+        });
+
+        cancelBg.on('pointerover', () => {
+            cancelBg.setFillStyle(0xe05555);
+            cancelBg.setScale(1.05);
+        });
+
+        cancelBg.on('pointerout', () => {
+            cancelBg.setFillStyle(0xc94c4c);
+            cancelBg.setScale(1);
+        });
+
+        // Confirm button with theme styling
+        const confirmBg = this.add.rectangle(120, 220, 180, 60, 0x5ca65c);
+        confirmBg.setStrokeStyle(3, 0x2d5016);
+        confirmBg.setInteractive({ useHandCursor: true });
+
+        const confirmText = this.add.text(120, 220, 'Confirm', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        });
+        confirmText.setOrigin(0.5);
+
+        confirmBg.on('pointerdown', () => {
+            this.confirmTrade();
+        });
+
+        confirmBg.on('pointerover', () => {
+            confirmBg.setFillStyle(0x6fc96f);
+            confirmBg.setScale(1.05);
+        });
+
+        confirmBg.on('pointerout', () => {
+            confirmBg.setFillStyle(0x5ca65c);
+            confirmBg.setScale(1);
+        });
+
+        // Add all to modal
+        this.npcConfirmModal.add([
+            modalBg, innerBorder, titleBg, title, giveLabel, divider, receiveLabel,
+            cancelBg, cancelText, confirmBg, confirmText
+        ]);
+        
+        // Add item containers
+        this.npcConfirmModal.add(giveItemsContainer);
+        this.npcConfirmModal.add(receiveItemsContainer);
+    }
+
+    private hideTradeConfirmationModal(): void {
+        if (this.npcConfirmModal) {
+            this.npcConfirmModal.destroy();
+            this.npcConfirmModal = undefined;
+        }
+        if (this.npcConfirmOverlay) {
+            this.npcConfirmOverlay.destroy();
+            this.npcConfirmOverlay = undefined;
+        }
+    }
+
+    private confirmTrade(): void {
+        // Hide confirmation modal
+        this.hideTradeConfirmationModal();
+
+        // Transfer items: remove from left slots, add right slots items to backpack
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const rightSlot = this.npcRightSlots[i];
+            if (rightSlot && rightSlot.itemId) {
+                const itemId = rightSlot.itemId;
+                const itemType = rightSlot.itemType || 'item';
+                const count = rightSlot.countText ? parseInt(rightSlot.countText.text) : 1;
+                
+                // Find first empty slot in backpack
+                for (let backpackIndex = 0; backpackIndex < this.BACKPACK_SLOT_COUNT; backpackIndex++) {
+                    const backpackSlot = this.backpackSlots[backpackIndex];
+                    if (!backpackSlot.itemId) {
+                        this.addItemToBackpack(itemId, backpackIndex, itemType, count);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Clear all NPC trade slots
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            this.clearNPCSlot(i, 'left');
+            this.clearNPCSlot(i, 'right');
+        }
+
+        // Reset trade state
+        this.npcTradeLocked = false;
+        
+        if (this.npcPlayerTick) {
+            this.npcPlayerTick.setVisible(false);
+        }
+        if (this.npcHermanTick) {
+            this.npcHermanTick.setVisible(false);
+        }
+        if (this.npcAcceptButton) {
+            this.npcAcceptButton.setText('Accept');
+        }
+
+        // Close the trade UI immediately
+        this.hideNPCTrade();
+    }
+
+
+
+    private handleCancelTrade(): void {
+        // Return items from left slots back to backpack
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            const slot = this.npcLeftSlots[i];
+            if (slot && slot.itemId) {
+                // Try to add item back to backpack
+                const itemId = slot.itemId;
+                const itemType = slot.itemType || 'item';
+                const count = slot.countText ? parseInt(slot.countText.text) : 1;
+                
+                // Find first empty slot in backpack
+                for (let backpackIndex = 0; backpackIndex < this.BACKPACK_SLOT_COUNT; backpackIndex++) {
+                    const backpackSlot = this.backpackSlots[backpackIndex];
+                    if (!backpackSlot.itemId) {
+                        this.addItemToBackpack(itemId, backpackIndex, itemType, count);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Clear all items from NPC trade slots
+        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
+            this.clearNPCSlot(i, 'left');
+            this.clearNPCSlot(i, 'right');
+        }
+        
+        // Unlock if locked
+        if (this.npcTradeLocked) {
+            this.npcTradeLocked = false;
+            
+            // Clear tints
+            [...this.npcLeftSlots, ...this.npcRightSlots].forEach(slot => {
+                (slot.bg as Phaser.GameObjects.Image).clearTint();
+            });
+            
+            // Hide ticks
+            if (this.npcPlayerTick) {
+                this.npcPlayerTick.setVisible(false);
+            }
+            if (this.npcHermanTick) {
+                this.npcHermanTick.setVisible(false);
+            }
+            
+            // Reset accept button
+            if (this.npcAcceptButton) {
+                this.npcAcceptButton.setText('Accept');
+            }
+        }
+        
+        // Close trade window
+        this.hideNPCTrade();
+    }
+
+    private handleAcceptTrade(): void {
+        // Toggle lock state
+        this.npcTradeLocked = !this.npcTradeLocked;
+        
+        if (this.npcTradeLocked) {
+            // Lock left slots (player's side)
+            this.npcLeftSlots.forEach(slot => {
+                (slot.bg as Phaser.GameObjects.Image).setTint(0x888888);
+            });
+            
+            // Show player tick
+            if (this.npcPlayerTick) {
+                this.npcPlayerTick.setVisible(true);
+            }
+            
+            // Change accept button text
+            if (this.npcAcceptButton) {
+                this.npcAcceptButton.setText('Unlock');
+            }
+            
+            // Start Herman's auto-fill animation
+            this.startHermanAutoFill();
+            
+            console.log('Trade locked!');
+        } else {
+            // Unlock all slots
+            [...this.npcLeftSlots, ...this.npcRightSlots].forEach(slot => {
+                (slot.bg as Phaser.GameObjects.Image).clearTint();
+            });
+            
+            // Hide player tick
+            if (this.npcPlayerTick) {
+                this.npcPlayerTick.setVisible(false);
+            }
+            
+            // Hide Herman tick
+            if (this.npcHermanTick) {
+                this.npcHermanTick.setVisible(false);
+            }
+            
+            // Clear Herman's items
+            for (let i = 0; i < 4; i++) {
+                this.clearNPCSlot(i, 'right');
+            }
+            
+            // Change accept button text back
+            if (this.npcAcceptButton) {
+                this.npcAcceptButton.setText('Accept');
+            }
+            
+            console.log('Trade unlocked!');
+        }
+    }
+
+    private startHermanAutoFill(): void {
+        // Fill Herman's slots one by one with 1 second delay
+        for (let i = 0; i < Math.min(4, this.npcHermanItems.length); i++) {
+            this.time.delayedCall(1000 * (i + 1), () => {
+                this.addItemToNPCSlot(this.npcHermanItems[i], i, 'right', 'item', 1);
+                
+                // After filling all 4 items, show Herman's tick
+                if (i === 3) {
+                    this.time.delayedCall(200, () => {
+                        if (this.npcHermanTick) {
+                            this.npcHermanTick.setVisible(true);
+                        }
+                        // Show confirmation modal after both ticks are visible
+                        this.time.delayedCall(500, () => {
+                            this.showTradeConfirmationModal();
+                        });
+                    });
+                }
+            });
         }
     }
 
