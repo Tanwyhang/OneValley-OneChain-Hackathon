@@ -8,16 +8,16 @@ module one_valley_gamefi::items {
     use one::event;
 
     // === Constants ===
-    public const WEAPON: u8 = 1;
-    public const ARMOR: u8 = 2;
-    public const CONSUMABLE: u8 = 3;
-    public const RESOURCE: u8 = 4;
+    const WEAPON: u8 = 1;
+    const ARMOR: u8 = 2;
+    const CONSUMABLE: u8 = 3;
+    const RESOURCE: u8 = 4;
 
     // Item rarity levels
-    public const COMMON: u8 = 1;
-    public const RARE: u8 = 2;
-    public const EPIC: u8 = 3;
-    public const LEGENDARY: u8 = 4;
+    const COMMON: u8 = 1;
+    const RARE: u8 = 2;
+    const EPIC: u8 = 3;
+    const LEGENDARY: u8 = 4;
 
     // === Errors ===
     const EInvalidRarity: u64 = 0;
@@ -122,7 +122,7 @@ module one_valley_gamefi::items {
             description,
             stats,
             minted_by: ctx.sender(),
-            mint_timestamp: ctx.epoch_timestamp_ms(),
+            mint_timestamp: tx_context::epoch_timestamp_ms(ctx),
             owner_history: vector::empty<address>(),
         };
 
@@ -208,14 +208,15 @@ module one_valley_gamefi::items {
         from: address,
         to: address,
         item_id: u64,
-        item_type: u8
+        item_type: u8,
+        ctx: &TxContext
     ) {
         event::emit(ItemTraded {
             from,
             to,
             item_id,
             item_type,
-            trade_timestamp: tx_context::epoch_timestamp_ms(),
+            trade_timestamp: ctx.epoch_timestamp_ms(),
         });
     }
 
@@ -321,7 +322,7 @@ module one_valley_gamefi::items {
             item_type,
             COMMON,
             name,
-            String::from("Test item"),
+            std::string::utf8(b"Test item"),
             vector[10u64, 20u64],
             ctx
         )

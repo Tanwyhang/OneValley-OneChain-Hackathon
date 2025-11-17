@@ -1,12 +1,13 @@
 /// Escrow-based trading module for OneValley GameFi project
 /// Implements secure P2P item trading using OneChain's escrow pattern
 module one_valley_gamefi::trading {
-    use one::object::{Self, ID, UID};
+    use std::string::String;
+    use one::object::{ID, UID};
     use one::transfer;
-    use one::tx_context::{Self, TxContext};
+    use one::tx_context::{TxContext};
     use one::event;
     use one_valley_gamefi::lock::{Locked, Key};
-    use one_valley_gamefi::items::{GameItem, ItemMinted, ItemTraded};
+    use one_valley_gamefi::items;
 
     // === Errors ===
     const EMismatchedSenderRecipient: u64 = 0;
@@ -109,7 +110,7 @@ module one_valley_gamefi::trading {
             exchange_key,
             escrowed_key: object::id(&key),
             escrowed: locked_item.unlock(key),
-            created_at: ctx.epoch_timestamp_ms(),
+            created_at: tx_context::epoch_timestamp_ms(ctx),
         };
 
         // Determine item type for event
@@ -144,7 +145,7 @@ module one_valley_gamefi::trading {
             recipient: recipient1,
             exchange_key: exchange_key1,
             escrowed_key: escrowed_key1,
-            escrow: escrowed1,
+            escrowed: escrowed1,
             created_at: _,
         } = escrow1;
 
@@ -154,9 +155,13 @@ module one_valley_gamefi::trading {
             recipient: recipient2,
             exchange_key: exchange_key2,
             escrowed_key: escrowed_key2,
-            escrow: escrowed2,
+            escrowed: escrowed2,
             created_at: _,
         } = escrow2;
+
+        // Get escrow IDs before deletion
+        let escrow_id_1 = object::uid_to_inner(&id1);
+        let escrow_id_2 = object::uid_to_inner(&id2);
 
         // Validate trade matching
         assert!(sender1 == recipient2, EMismatchedSenderRecipient);
@@ -172,33 +177,36 @@ module one_valley_gamefi::trading {
         custodian.total_trades = custodian.total_trades + 1;
         custodian.active_escrows = custodian.active_escrows - 2;
 
+        // Get item info for events before transfer
+        let item_id1 = get_item_id_direct(&escrowed1);
+        let item_type1 = get_item_type_direct(&escrowed1);
+        let item_id2 = get_item_id_direct(&escrowed2);
+        let item_type2 = get_item_type_direct(&escrowed2);
+
         // Execute the swap
         transfer::public_transfer(escrowed1, recipient1);
         transfer::public_transfer(escrowed2, recipient2);
 
-        // Emit events for frontend
-        let item_type1 = get_item_type_direct(&escrowed1);
-        let item_type2 = get_item_type_direct(&escrowed2);
+        // Emit events for frontend using items module
+        items::emit_trade_event(
+            sender1,
+            recipient1,
+            item_id1,
+            item_type1,
+            ctx
+        );
 
-        event::emit(ItemTraded {
-            from: sender1,
-            to: recipient1,
-            item_id: get_item_id_direct(&escrowed1),
-            item_type: item_type1,
-            trade_timestamp: tx_context::epoch_timestamp_ms(ctx),
-        });
-
-        event::emit(ItemTraded {
-            from: sender2,
-            to: recipient2,
-            item_id: get_item_id_direct(&escrowed2),
-            item_type: item_type2,
-            trade_timestamp: tx_context::epoch_timestamp_ms(ctx),
-        });
+        items::emit_trade_event(
+            sender2,
+            recipient2,
+            item_id2,
+            item_type2,
+            ctx
+        );
 
         event::emit(TradeCompleted {
-            escrow_id_1: object::uid_to_inner(id1),
-            escrow_id_2: object::uid_to_inner(id2),
+            escrow_id_1: escrow_id_1,
+            escrow_id_2: escrow_id_2,
             trader_1: sender1,
             trader_2: sender2,
             completed_at: tx_context::epoch_timestamp_ms(ctx),
@@ -218,19 +226,20 @@ module one_valley_gamefi::trading {
             recipient: _,
             exchange_key: _,
             escrowed_key: _,
-            escrow: escrowed,
+            escrowed,
             created_at: _,
         } = escrow;
 
         // Only sender can cancel their own escrow
         assert!(sender == escrow_sender, EInvalidEscrowState);
 
+        let escrow_id = object::uid_to_inner(&id);
         object::delete(id);
 
         event::emit(EscrowCancelled {
-            escrow_id: object::uid_to_inner(id),
+            escrow_id,
             sender: escrow_sender,
-            reason: String::from("User cancelled"),
+            reason: std::string::utf8(b"User cancelled"),
             cancelled_at: tx_context::epoch_timestamp_ms(ctx),
         });
 
@@ -317,18 +326,19 @@ module one_valley_gamefi::trading {
     public fun transfer_custodian_ownership(
         custodian: GameCustodian,
         new_owner: address,
-        ctx: &TxContext
+        ctx: &mut TxContext
     ) {
         assert!(custodian.owner == tx_context::sender(ctx), EUnauthorizedCustodian);
         let GameCustodian { id, total_trades, active_escrows, owner: _ } = custodian;
 
         let new_custodian = GameCustodian {
-            id,
+            id: object::new(ctx),
             total_trades,
             active_escrows,
             owner: new_owner,
         };
 
+        object::delete(id);
         transfer::share_object(new_custodian);
     }
 
@@ -341,14 +351,19 @@ module one_valley_gamefi::trading {
         escrowed: T,
         ctx: &mut TxContext
     ): TradeEscrow<T> {
+        // Create a dummy object to get a valid ID
+        let dummy_obj = object::new(ctx);
+        let dummy_id = object::uid_to_inner(&dummy_obj);
+        object::delete(dummy_obj);
+
         TradeEscrow {
             id: object::new(ctx),
             sender,
             recipient,
             exchange_key,
-            escrowed_key: @0x1,
+            escrowed_key: dummy_id,
             escrowed,
-            created_at: ctx.epoch_timestamp_ms(),
+            created_at: tx_context::epoch_timestamp_ms(ctx),
         }
     }
 

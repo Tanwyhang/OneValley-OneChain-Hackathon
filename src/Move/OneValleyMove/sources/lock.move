@@ -69,10 +69,10 @@ module one_valley_gamefi::lock {
 
     // === Test Functions ===
     #[test_only]
-    public fun destroy_locked<T: store>(locked: Locked<T>) {
+    public fun destroy_locked<T: key + store>(locked: Locked<T>) {
         let Locked { id, key: _, obj } = locked;
         object::delete(id);
-        // Note: obj must have drop ability or be handled by caller
+        transfer::public_transfer(obj, @0x0); // Send to burn address
     }
 
     #[test_only]

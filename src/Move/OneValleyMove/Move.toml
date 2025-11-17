@@ -9,6 +9,3 @@ One = { git = "https://github.com/one-chain-labs/onechain.git", subdir = "crates
 
 [addresses]
 one_valley_gamefi = "0x0"
-
-[dev-addresses]
-one_valley_gamefi = "0x0"
