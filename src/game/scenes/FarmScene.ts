@@ -3,6 +3,7 @@ import { EventBus } from '../EventBus';
 import { UIScene } from './UIScene';
 import { SCENE_KEYS } from './SceneKeys';
 import { Enemy } from '../enemies/Enemy';
+import { getOpenRouterService, OpenRouterService } from '../../services/OpenRouterService';
 
 interface Crop {
     x: number;
@@ -60,6 +61,7 @@ export class FarmScene extends Scene {
 
     // Sprite-based crop system to solve overlapping issues
     private cropSprites: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
+    private windEffectTweens: Map<string, Phaser.Tweens.Tween[]> = new Map();
 
     // Player state
     private playerSpeed: number = 150;
@@ -99,6 +101,7 @@ export class FarmScene extends Scene {
     private chatText!: Phaser.GameObjects.Text;
     private playerInput: string = '';
     private npcResponse!: Phaser.GameObjects.Text;
+    private openRouterService!: OpenRouterService;
 
     // Settings UI
     private settingsIcon!: Phaser.GameObjects.Image;
@@ -289,6 +292,9 @@ export class FarmScene extends Scene {
     create() {
         console.log('FarmScene create() started');
 
+        // Initialize OpenRouter service for NPC chat
+        this.openRouterService = getOpenRouterService();
+
         // Reset state variables and clear references to destroyed objects
         this.isNearNPC = false;
         this.isNearMarketplace = false;
@@ -389,6 +395,42 @@ export class FarmScene extends Scene {
         this.updateChatBubblePosition();
         this.checkNPCProximity();
         this.checkMarketplaceProximity();
+    }
+
+    private applyWindEffect(sprite: Phaser.GameObjects.Sprite, cropKey: string): void {
+        // Create subtle wind sway effect with random timing for natural look
+        const baseDelay = Phaser.Math.Between(0, 2000);
+        const swayDuration = Phaser.Math.Between(1500, 2500);
+        const swayAngle = Phaser.Math.FloatBetween(1.5, 3);
+        const scaleFactor = Phaser.Math.FloatBetween(0.98, 1.02);
+
+        // Rotation tween - subtle sway left and right
+        const rotationTween = this.tweens.add({
+            targets: sprite,
+            angle: { from: -swayAngle, to: swayAngle },
+            duration: swayDuration,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1,
+            delay: baseDelay
+        });
+
+        // Scale tween - very subtle breathing effect
+        const scaleTween = this.tweens.add({
+            targets: sprite,
+            scaleX: scaleFactor,
+            scaleY: scaleFactor,
+            duration: swayDuration * 0.8,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1,
+            delay: baseDelay + 200
+        });
+
+        // Store tweens for cleanup
+        const existingTweens = this.windEffectTweens.get(cropKey) || [];
+        existingTweens.push(rotationTween, scaleTween);
+        this.windEffectTweens.set(cropKey, existingTweens);
     }
 
 
@@ -2014,9 +2056,11 @@ export class FarmScene extends Scene {
 
         // Create initial seed sprite (stage 0) using carrot stage 1 sprite
         console.log('Creating carrot seed sprite with key: carrot_stage1, exists:', this.textures.exists('carrot_stage1'));
-        const seedSprite = this.add.sprite(worldX, worldY - 5, 'carrot_stage1');
-        seedSprite.setOrigin(0.5);
+        const seedSprite = this.add.sprite(worldX, worldY, 'carrot_stage1');
+        seedSprite.setOrigin(0.5, 1); // Center bottom
         seedSprite.setDepth(tileY); // Z-order based on row position, same level as tiles
+
+        // No wind effect on seed stage
 
         // Store sprite for this crop
         this.cropSprites.set(cropKey, [seedSprite]);
@@ -2038,6 +2082,17 @@ export class FarmScene extends Scene {
 
         crop.growthStage = newStage;
 
+        // Clean up existing wind effect tweens
+        const existingTweens = this.windEffectTweens.get(cropKey);
+        if (existingTweens) {
+            existingTweens.forEach(tween => {
+                if (tween && tween.isPlaying()) {
+                    tween.remove();
+                }
+            });
+            this.windEffectTweens.delete(cropKey);
+        }
+
         // Remove existing sprites and text
         existingSprites.forEach(obj => {
             if (obj && obj.active) {
@@ -2054,9 +2109,12 @@ export class FarmScene extends Scene {
         switch (newStage) {
             case 1:
                 // Growing stage (5 seconds): use carrot stage 2 sprite
-                const growingSprite = this.add.sprite(worldX, worldY - 10, 'carrot_stage2');
-                growingSprite.setOrigin(0.5);
+                const growingSprite = this.add.sprite(worldX, worldY, 'carrot_stage2');
+                growingSprite.setOrigin(0.5, 1); // Center bottom
                 growingSprite.setDepth(crop.y); // Same level as tiles
+
+                // Apply wind effect to growing crop
+                this.applyWindEffect(growingSprite, cropKey);
 
                 newSprites.push(growingSprite);
 
@@ -2069,9 +2127,12 @@ export class FarmScene extends Scene {
 
             case 2:
                 // Fully grown stage (10 seconds total): use carrot stage 3 sprite
-                const matureSprite = this.add.sprite(worldX, worldY - 10, 'carrot_stage3');
-                matureSprite.setOrigin(0.5);
+                const matureSprite = this.add.sprite(worldX, worldY, 'carrot_stage3');
+                matureSprite.setOrigin(0.5, 1); // Center bottom
                 matureSprite.setDepth(crop.y); // Same level as tiles
+
+                // Apply wind effect to mature crop
+                this.applyWindEffect(matureSprite, cropKey);
 
                 newSprites.push(matureSprite);
                 break;
@@ -2456,7 +2517,7 @@ export class FarmScene extends Scene {
 
         // Add chatdialog image for NPC
         const npcDialogImage = this.add.image(0, -20, 'chatdialog');
-        npcDialogImage.setScale(0.15); // Scale down from 905x276
+        npcDialogImage.setScale(0.2); // Slightly larger to fit AI responses
 
         this.npcResponse = this.add.text(
             0,
@@ -2466,7 +2527,7 @@ export class FarmScene extends Scene {
                 fontSize: '10px',
                 color: '#000000',
                 fontStyle: 'bold',
-                wordWrap: { width: 120 },
+                wordWrap: { width: 150 },
                 resolution: 3
             }
         );
@@ -2498,11 +2559,13 @@ export class FarmScene extends Scene {
         }
     }
 
-    private sendMessage(): void {
+    private async sendMessage(): Promise<void> {
         if (this.playerInput.trim().length === 0) return;
 
+        const userMessage = this.playerInput.trim();
+
         // Show the final message in player's bubble
-        this.chatText.setText(this.playerInput);
+        this.chatText.setText(userMessage);
 
         // Hide chatbox indicator (stop showing typing icon)
         const chatboxIndicator = this.player.getData('chatboxIndicator');
@@ -2513,14 +2576,30 @@ export class FarmScene extends Scene {
         // Allow player to move again
         this.isChatting = false;
 
-        // NPC responds with "Deal!"
-        this.time.delayedCall(500, () => {
+        // Show NPC is "thinking" with typing indicator
+        this.time.delayedCall(500, async () => {
             this.chatBubble.setVisible(true);
+            this.npcResponse.setText('...');
 
-            // Close chat after showing response (this will hide both bubbles)
-            this.time.delayedCall(2000, () => {
-                this.endChat();
-            });
+            try {
+                // Get AI response from OpenRouter
+                const aiResponse = await this.openRouterService.sendMessage(userMessage);
+                
+                // Update NPC response text
+                this.npcResponse.setText(aiResponse);
+
+                // Close chat after showing response
+                this.time.delayedCall(5000, () => {
+                    this.endChat();
+                });
+            } catch (error) {
+                console.error('Error getting AI response:', error);
+                this.npcResponse.setText('Hmm, let me think about that...');
+                
+                this.time.delayedCall(3000, () => {
+                    this.endChat();
+                });
+            }
         });
     }
 
@@ -2528,28 +2607,33 @@ export class FarmScene extends Scene {
         this.isChatting = false;
         this.playerInput = '';
 
-        // Destroy chatbox indicator
+        // Hide and destroy chatbox indicator
         const chatboxIndicator = this.player.getData('chatboxIndicator');
-        if (chatboxIndicator) {
+        if (chatboxIndicator && chatboxIndicator.active) {
+            chatboxIndicator.setVisible(false);
             chatboxIndicator.destroy();
             this.player.setData('chatboxIndicator', null);
         }
 
-        // Destroy player chat bubble
+        // Hide and destroy player chat bubble
         const playerBubble = this.player.getData('chatBubble');
-        if (playerBubble) {
+        if (playerBubble && playerBubble.active) {
+            playerBubble.setVisible(false);
             playerBubble.destroy();
             this.player.setData('chatBubble', null);
         }
 
-        // Destroy NPC chat bubble
-        if (this.chatBubble) {
+        // Hide and destroy NPC chat bubble
+        if (this.chatBubble && this.chatBubble.active) {
+            this.chatBubble.setVisible(false);
             this.chatBubble.destroy();
         }
 
         // Resume NPC patrol only after everything is cleaned up
         this.time.delayedCall(100, () => {
-            this.npc.setData('patrolPaused', false);
+            if (this.npc && this.npc.active) {
+                this.npc.setData('patrolPaused', false);
+            }
         });
     }
 
