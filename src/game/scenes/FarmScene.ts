@@ -608,6 +608,42 @@ export class FarmScene extends Scene {
         if (chatboxIndicator && chatboxIndicator.active) {
             chatboxIndicator.setPosition(this.player.x + 20, this.player.y - 15);
         }
+
+        // Check for overlap and adjust transparency
+        this.checkAndHandleBubbleOverlap();
+    }
+
+    private checkAndHandleBubbleOverlap(): void {
+        const playerBubble = this.player.getData('chatBubble');
+        
+        // Only check if both bubbles are active and visible
+        if (!playerBubble || !playerBubble.active || !this.chatBubble || !this.chatBubble.active || !this.chatBubble.visible) {
+            // Reset alpha if no overlap check needed
+            if (playerBubble && playerBubble.active) {
+                playerBubble.setAlpha(1);
+            }
+            if (this.chatBubble && this.chatBubble.active) {
+                this.chatBubble.setAlpha(1);
+            }
+            return;
+        }
+
+        // Calculate distance between bubbles
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            this.npc.x, this.npc.y
+        );
+
+        // If characters are close (within 100 pixels), bubbles might overlap
+        if (distance < 100) {
+            // Make NPC bubble transparent so player bubble is always fully visible
+            playerBubble.setAlpha(1);
+            this.chatBubble.setAlpha(0.7);
+        } else {
+            // No overlap, restore full opacity
+            playerBubble.setAlpha(1);
+            this.chatBubble.setAlpha(1);
+        }
     }
 
     private createMap(): void {
@@ -2177,6 +2213,9 @@ export class FarmScene extends Scene {
 
         this.isAttacking = true;
 
+        // Add screen shake effect
+        this.cameras.main.shake(120, 0.002);
+
         // Check for chickens in attack range
         this.checkAttackHit();
 
@@ -2285,6 +2324,7 @@ export class FarmScene extends Scene {
     private onAttackComplete(): void {
         // If Q is still being held, play the attack animation again (loop)
         if (this.attackKey.isDown) {
+            this.cameras.main.shake(120, 0.002);
             // Check for hits on each attack cycle
             this.checkAttackHit();
             const attackAnim = `attack-${this.currentDirection}`;
@@ -2476,64 +2516,132 @@ export class FarmScene extends Scene {
     }
 
     private createChatBubble(): void {
-        const bubbleWidth = 100;
-        const bubbleHeight = 30;
-        const bubblePadding = 6;
-
         // Create chatbox indicator image beside player's head (closer to character)
         const chatboxIndicator = this.add.image(this.player.x + 5, this.player.y - 5, 'chatbox');
         chatboxIndicator.setScale(0.25); // Small indicator
         chatboxIndicator.setDepth(2000);
         this.player.setData('chatboxIndicator', chatboxIndicator);
 
-        // Create player's chat bubble with chatdialog image
-        const playerBubble = this.add.container(this.player.x, this.player.y - 5);
+        // Create player's chat bubble with modern rounded design
+        const playerBubble = this.add.container(this.player.x, this.player.y - 35);
         playerBubble.setDepth(2000);
 
-        // Add chatdialog image
-        const chatDialogImage = this.add.image(0, -20, 'chatdialog');
-        chatDialogImage.setScale(0.15); // Scale down from 905x276
+        // Create player bubble background (will be drawn after text is set)
+        const playerBubbleGraphics = this.add.graphics();
+        playerBubbleGraphics.setName('playerBubbleBackground');
 
         this.chatText = this.add.text(
             0,
-            -20,
+            0,
             '',
             {
-                fontSize: '10px',
-                color: '#000000',
-                wordWrap: { width: 120 },
-                resolution: 3
+                fontSize: '11px',
+                color: '#2c3e50',
+                fontFamily: 'Arial, sans-serif',
+                wordWrap: { width: 140 },
+                resolution: 3,
+                align: 'center'
             }
         );
         this.chatText.setOrigin(0.5, 0.5);
 
-        playerBubble.add([chatDialogImage, this.chatText]);
+        playerBubble.add([playerBubbleGraphics, this.chatText]);
         this.player.setData('chatBubble', playerBubble);
 
-        // Create NPC's chat bubble (hidden initially)
+        // Create NPC's chat bubble (hidden initially) with modern rounded design
         this.chatBubble = this.add.container(this.npc.x, this.npc.y - 50);
         this.chatBubble.setDepth(2000);
         this.chatBubble.setVisible(false);
 
-        // Add chatdialog image for NPC
-        const npcDialogImage = this.add.image(0, -20, 'chatdialog');
-        npcDialogImage.setScale(0.2); // Slightly larger to fit AI responses
+        // Create NPC bubble background
+        const npcBubbleGraphics = this.add.graphics();
+        npcBubbleGraphics.setName('npcBubbleBackground');
 
         this.npcResponse = this.add.text(
             0,
-            -20,
+            0,
             'Deal!',
             {
-                fontSize: '10px',
-                color: '#000000',
+                fontSize: '11px',
+                color: '#2c3e50',
+                fontFamily: 'Arial, sans-serif',
                 fontStyle: 'bold',
-                wordWrap: { width: 150 },
-                resolution: 3
+                wordWrap: { width: 160 },
+                resolution: 3,
+                align: 'center'
             }
         );
         this.npcResponse.setOrigin(0.5, 0.5);
 
-        this.chatBubble.add([npcDialogImage, this.npcResponse]);
+        this.chatBubble.add([npcBubbleGraphics, this.npcResponse]);
+        
+        // Draw initial NPC bubble
+        this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
+    }
+
+    private updateChatBubbleBackground(container: Phaser.GameObjects.Container, textObj: Phaser.GameObjects.Text, isPlayer: boolean): void {
+        const graphics = container.getByName(isPlayer ? 'playerBubbleBackground' : 'npcBubbleBackground') as Phaser.GameObjects.Graphics;
+        if (!graphics) return;
+
+        const padding = 12;
+        
+        // Force text to update its bounds
+        textObj.updateText();
+        
+        // Get actual text dimensions
+        const textWidth = textObj.width;
+        const textHeight = textObj.height;
+        
+        const bubbleWidth = Math.max(70, textWidth + padding * 2);
+        const bubbleHeight = Math.max(35, textHeight + padding * 2);
+
+        graphics.clear();
+        
+        // Soft shadow
+        graphics.fillStyle(0x000000, 0.15);
+        graphics.fillRect(
+            -bubbleWidth / 2 + 2,
+            -bubbleHeight / 2 + 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Main bubble background
+        graphics.fillStyle(0xffffff, 1);
+        graphics.fillRect(
+            -bubbleWidth / 2,
+            -bubbleHeight / 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Border
+        graphics.lineStyle(2, 0xe0e0e0, 1);
+        graphics.strokeRect(
+            -bubbleWidth / 2,
+            -bubbleHeight / 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Bubble tail (small triangle pointing to character)
+        const tailSize = 8;
+        const tailY = bubbleHeight / 2;
+        
+        graphics.fillStyle(0xffffff, 1);
+        graphics.fillTriangle(
+            -tailSize / 2, tailY,
+            tailSize / 2, tailY,
+            0, tailY + tailSize
+        );
+        
+        // Tail border
+        graphics.lineStyle(2, 0xe0e0e0, 1);
+        graphics.strokeTriangle(
+            -tailSize / 2, tailY,
+            tailSize / 2, tailY,
+            0, tailY + tailSize
+        );
     }
 
     private handleChatInput(event: KeyboardEvent): void {
@@ -2556,6 +2664,11 @@ export class FarmScene extends Scene {
     private updateChatText(): void {
         if (this.chatText) {
             this.chatText.setText(this.playerInput + '|');
+            // Update player bubble background to fit new text
+            const playerBubble = this.player.getData('chatBubble');
+            if (playerBubble) {
+                this.updateChatBubbleBackground(playerBubble, this.chatText, true);
+            }
         }
     }
 
@@ -2566,6 +2679,12 @@ export class FarmScene extends Scene {
 
         // Show the final message in player's bubble
         this.chatText.setText(userMessage);
+        
+        // Update player bubble background for final message
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble) {
+            this.updateChatBubbleBackground(playerBubble, this.chatText, true);
+        }
 
         // Hide chatbox indicator (stop showing typing icon)
         const chatboxIndicator = this.player.getData('chatboxIndicator');
@@ -2580,6 +2699,7 @@ export class FarmScene extends Scene {
         this.time.delayedCall(500, async () => {
             this.chatBubble.setVisible(true);
             this.npcResponse.setText('...');
+            this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
 
             try {
                 // Get AI response from OpenRouter
@@ -2587,6 +2707,9 @@ export class FarmScene extends Scene {
                 
                 // Update NPC response text
                 this.npcResponse.setText(aiResponse);
+                
+                // Update NPC bubble background to fit response
+                this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
 
                 // Close chat after showing response
                 this.time.delayedCall(5000, () => {
@@ -2595,6 +2718,7 @@ export class FarmScene extends Scene {
             } catch (error) {
                 console.error('Error getting AI response:', error);
                 this.npcResponse.setText('Hmm, let me think about that...');
+                this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
                 
                 this.time.delayedCall(3000, () => {
                     this.endChat();
