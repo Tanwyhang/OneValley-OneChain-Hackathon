@@ -4,14 +4,6 @@ import { UIScene } from './UIScene';
 import { SCENE_KEYS } from './SceneKeys';
 import { Enemy } from '../enemies/Enemy';
 import { getOpenRouterService, OpenRouterService } from '../../services/OpenRouterService';
-import { ContextualActionManager } from '../managers/ContextualActionManager';
-import { FloatingHintManager } from '../managers/FloatingHintManager';
-import { OneChainHarvester } from '../../services/OneChainHarvester';
-import WalletBridgeService from '../../services/WalletBridgeService';
-import { SuiClient } from '@onelabs/sui/client';
-import { ONECHAIN_NETWORK } from '../../config/contracts';
-import HUDBridgeService from '../../services/HUDBridgeService';
-import AutoMintService, { GameItem } from '../../services/AutoMintService';
 
 interface Crop {
     x: number;
@@ -71,25 +63,6 @@ export class FarmScene extends Scene {
     private cropSprites: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
     private windEffectTweens: Map<string, Phaser.Tweens.Tween[]> = new Map();
 
-    // Harvesting system
-    private droppedCarrots: Map<string, Phaser.GameObjects.Sprite> = new Map();
-    private harvestKey!: Phaser.Input.Keyboard.Key;
-    private collectKey!: Phaser.Input.Keyboard.Key;
-    private marketplaceKey!: Phaser.Input.Keyboard.Key;
-    private harvestedCarrotCount: number = 0;
-    private collectButton!: Phaser.GameObjects.Container;
-    private collectButtonText!: Phaser.GameObjects.Text;
-    private isHarvesting: boolean = false;
-    private isCollecting: boolean = false;
-
-    // Mint confirmation modal properties (following transaction details modal pattern)
-    private mintModalContainer!: Phaser.GameObjects.Container;
-    private mintModalVisible: boolean = false;
-    private mintModalCreated: boolean = false;
-    private mintModalOverlay!: Phaser.GameObjects.Rectangle;
-    private mintModalCloseButton!: Phaser.GameObjects.GameObject;
-    private pendingMintCount: number = 0;
-
     // Player state
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
@@ -125,28 +98,10 @@ export class FarmScene extends Scene {
     private isChatting: boolean = false;
     private chatBubble!: Phaser.GameObjects.Container;
     private chatBackground!: Phaser.GameObjects.Graphics;
-
-    // Transaction notification system
-    private transactionNotificationQueue: Array<{
-      message: string;
-      type: 'success' | 'info' | 'warning';
-      duration: number;
-    }> = [];
-    private isShowingNotification: boolean = false;
-    private currentNotificationText?: Phaser.GameObjects.Text;
-    private currentNotificationBackground?: Phaser.GameObjects.Graphics;
-    private notificationContainer?: Phaser.GameObjects.Container;
     private chatText!: Phaser.GameObjects.Text;
     private playerInput: string = '';
     private npcResponse!: Phaser.GameObjects.Text;
     private openRouterService!: OpenRouterService;
-    
-    // HUD Bridge for React HUD integration
-    private hudBridge!: HUDBridgeService;
-
-    // Contextual Action System
-    private contextualActionManager!: ContextualActionManager;
-    private floatingHintManager!: FloatingHintManager;
 
     // Settings UI
     private settingsIcon!: Phaser.GameObjects.Image;
@@ -154,14 +109,8 @@ export class FarmScene extends Scene {
 
     // Marketplace
     private marketplaceIcon!: Phaser.GameObjects.Image;
-
-    // OneChain Harvester
-    private oneChainHarvester!: OneChainHarvester;
-    private suiClient!: SuiClient;
-    private walletBridge!: WalletBridgeService;
     private isNearMarketplace: boolean = false;
 
-    
     constructor() {
         super('FarmScene');
     }
@@ -318,9 +267,6 @@ export class FarmScene extends Scene {
         // Guide button
         this.load.image('guide-button', 'guide-button.png');
 
-        // Exit button
-        this.load.image('exit-button', 'exit-button.png');
-
         // Guide menu image (you'll add this)
         // this.load.image('guide-menu', 'guide-menu.png');
 
@@ -348,29 +294,6 @@ export class FarmScene extends Scene {
 
         // Initialize OpenRouter service for NPC chat
         this.openRouterService = getOpenRouterService();
-
-        // Initialize contextual action system
-        this.contextualActionManager = new ContextualActionManager(this);
-        this.floatingHintManager = new FloatingHintManager(this);
-
-        // Initialize OneChain services for real blockchain minting
-        this.suiClient = new SuiClient({ url: ONECHAIN_NETWORK.RPC_URL });
-        this.walletBridge = WalletBridgeService.getInstance();
-        this.oneChainHarvester = this.walletBridge.getHarvester() || new OneChainHarvester(this.suiClient);
-        
-        // Initialize HUD Bridge for React HUD
-        this.hudBridge = HUDBridgeService.getInstance();
-        this.hudBridge.updatePlayerStats({
-            health: this.playerCurrentHp,
-            maxHealth: this.playerMaxHp,
-            energy: 100,
-            maxEnergy: 100,
-            level: 1,
-            experience: 0,
-            experienceToNextLevel: 100,
-        });
-        this.hudBridge.setGoldCount(0);
-        this.hudBridge.setCurrentScene('farm');
 
         // Reset state variables and clear references to destroyed objects
         this.isNearNPC = false;
@@ -414,8 +337,6 @@ export class FarmScene extends Scene {
         this.createEnemies();
         this.setupInputs();
         this.setupCamera();
-        this.createCollectButton();
-        this.createMintModal();
 
         // Create particles
         this.createParticles();
@@ -427,9 +348,6 @@ export class FarmScene extends Scene {
         this.handleInteraction();
 
         EventBus.emit('current-scene-ready', this);
-
-        // Set up transaction notification listeners
-        this.setupTransactionNotifications();
 
         // Stop UIScene if it exists, then start it fresh
         if (this.scene.isActive(SCENE_KEYS.UI)) {
@@ -477,19 +395,6 @@ export class FarmScene extends Scene {
         this.updateChatBubblePosition();
         this.checkNPCProximity();
         this.checkMarketplaceProximity();
-        this.updateCollectButton();
-        this.updateFloatingCarrots();
-
-        // Update contextual action system
-        if (this.contextualActionManager && this.floatingHintManager) {
-            const actionResult = this.contextualActionManager.update();
-            this.floatingHintManager.update(actionResult.availableActions);
-        }
-
-        // Handle harvesting
-        if (this.harvestKey.isDown && !this.isHarvesting) {
-            this.tryHarvestCrop();
-        }
     }
 
     private applyWindEffect(sprite: Phaser.GameObjects.Sprite, cropKey: string): void {
@@ -677,8 +582,7 @@ export class FarmScene extends Scene {
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
-
-          }
+    }
 
     private openMarketplace(): void {
         const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
@@ -1913,23 +1817,23 @@ export class FarmScene extends Scene {
         this.attackKey = this.input.keyboard!.addKey('Q');
         this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.cutKey = this.input.keyboard!.addKey('R');
-        this.harvestKey = this.input.keyboard!.addKey('H');
-        this.collectKey = this.input.keyboard!.addKey('C');
-        this.marketplaceKey = this.input.keyboard!.addKey('M');
 
         this.escKey.on('down', () => {
             if (this.isChatting) {
                 this.endChat();
+            } else {
+                // Check if any UI is open before allowing exit
+                const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
+                if (uiScene && (uiScene.isMarketplaceOpen() || uiScene.isBackpackOpen())) {
+                    // Don't exit, let UIScene handle ESC
+                    return;
+                }
+                this.exitFarm();
             }
-            // ESC key now only handles closing chat - UI modals are handled by UIScene
-            // Exit to menu is handled by a dedicated button
         });
 
         this.spaceKey.on('down', () => this.tryStartChat());
         this.cutKey.on('down', () => this.tryCutTree());
-        this.harvestKey.on('down', () => this.tryHarvestCrop());
-        this.collectKey.on('down', () => this.tryCollectCarrots());
-        this.marketplaceKey.on('down', () => this.openMarketplace());
 
         // Listen for keyboard input for chat
         this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
@@ -2082,10 +1986,6 @@ export class FarmScene extends Scene {
         const damage = enemySprite.getDamage();
         this.playerCurrentHp -= damage;
         this.lastDamageTime = currentTime;
-        
-        // Update React HUD
-        this.hudBridge.setHealth(this.playerCurrentHp);
-        this.hudBridge.notifyWarning('Damage Taken', `-${damage} HP`, 2000);
 
         // Flash player red
         this.player.setTint(0xff0000);
@@ -2167,119 +2067,6 @@ export class FarmScene extends Scene {
                         return;
                     }
                 }
-            }
-        });
-    }
-
-    private setupTransactionNotifications(): void {
-        // Listen for NPC trade completion
-        EventBus.on('npc-trade-completed', this.handleNPCTradeCompletedNotification.bind(this));
-
-        // Listen for transaction details requests (to potentially show in-game hints)
-        EventBus.on('show-transaction-details', this.handleTransactionDetailsRequest.bind(this));
-    }
-
-    private handleNPCTradeCompletedNotification(transaction: import('../../types/onechain').TransactionDetails): void {
-        const itemCount = transaction.itemsTraded.playerItems.length + transaction.itemsTraded.npcItems.length;
-        const message = `✅ Trade with Herman completed! ${itemCount} items exchanged`;
-
-        this.showTransactionNotification(message, 'success', 3000);
-    }
-
-    private handleTransactionDetailsRequest(transaction: import('../../types/onechain').TransactionDetails): void {
-        // Could show a subtle in-game hint or notification
-        const message = `📄 Transaction details available: ${transaction.transactionHash.substring(0, 10)}...`;
-        this.showTransactionNotification(message, 'info', 2000);
-    }
-
-    private showTransactionNotification(message: string, type: 'success' | 'info' | 'warning', duration: number): void {
-        // Add to queue
-        this.transactionNotificationQueue.push({
-            message,
-            type,
-            duration
-        });
-
-        // Process queue if not already showing
-        if (!this.isShowingNotification) {
-            this.processNotificationQueue();
-        }
-    }
-
-    private processNotificationQueue(): void {
-        if (this.transactionNotificationQueue.length === 0) {
-            this.isShowingNotification = false;
-            return;
-        }
-
-        this.isShowingNotification = true;
-        const notification = this.transactionNotificationQueue.shift()!;
-        const { message, type, duration } = notification;
-
-        // Create notification container
-        this.notificationContainer = this.add.container(
-            this.cameras.main.width / 2,
-            100 // Position at top of screen
-        );
-        this.notificationContainer.setScrollFactor(0);
-        this.notificationContainer.setDepth(30000);
-
-        // Create background
-        this.currentNotificationBackground = this.add.graphics();
-        this.currentNotificationBackground.fillStyle(0x1a1a1a, 0.9);
-        this.currentNotificationBackground.fillRoundedRect(-200, -25, 400, 50, 8);
-
-        // Add colored border based on type
-        const borderColor = type === 'success' ? 0x10b981 : type === 'warning' ? 0xf59e0b : 0x3b82f6;
-        this.currentNotificationBackground.lineStyle(3, borderColor, 1);
-        this.currentNotificationBackground.strokeRoundedRect(-200, -25, 400, 50, 8);
-
-        this.notificationContainer.add(this.currentNotificationBackground);
-
-        // Create text
-        this.currentNotificationText = this.add.text(0, 0, message, {
-            fontSize: '16px',
-            color: '#ffffff',
-            fontStyle: 'bold',
-            align: 'center',
-            wordWrap: { width: 350 }
-        });
-        this.currentNotificationText.setOrigin(0.5);
-        this.notificationContainer.add(this.currentNotificationText);
-
-        // Animate in
-        this.notificationContainer.setAlpha(0);
-        this.notificationContainer.setY(50);
-
-        this.tweens.add({
-            targets: this.notificationContainer,
-            alpha: 1,
-            y: 100,
-            duration: 300,
-            ease: 'Power2',
-            onComplete: () => {
-                // Wait for duration, then animate out
-                this.time.delayedCall(duration, () => {
-                    this.tweens.add({
-                        targets: this.notificationContainer,
-                        alpha: 0,
-                        y: 50,
-                        duration: 300,
-                        ease: 'Power2',
-                        onComplete: () => {
-                            // Clean up
-                            if (this.notificationContainer) {
-                                this.notificationContainer.destroy();
-                                this.notificationContainer = undefined;
-                                this.currentNotificationBackground = undefined;
-                                this.currentNotificationText = undefined;
-                            }
-
-                            // Process next notification
-                            this.processNotificationQueue();
-                        }
-                    });
-                });
             }
         });
     }
@@ -2990,742 +2777,29 @@ export class FarmScene extends Scene {
         });
     }
 
-    private tryHarvestCrop(): void {
-        if (this.isHarvesting || this.isChatting || this.isCutting) return;
-
-        const playerTileX = Math.floor(this.player.x / 16);
-        const playerTileY = Math.floor(this.player.y / 16);
-        const radius = 2;
-
-        // Find nearest mature carrot
-        for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
-            for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
-                const cropKey = `${x},${y}`;
-                const crop = this.crops.get(cropKey);
-
-                if (crop && crop.growthStage === 2) {
-                    this.harvestCarrot(cropKey, crop);
-                    return;
-                }
-            }
-        }
-        
-        // No mature carrots found nearby - show feedback
-        this.showHarvestFeedback('No mature carrots nearby!');
-    }
-
-    private harvestCarrot(cropKey: string, crop: Crop): void {
-        this.isHarvesting = true;
-
-        // Get crop sprites and remove them
-        const sprites = this.cropSprites.get(cropKey);
-        if (sprites) {
-            sprites.forEach(sprite => {
-                if (sprite && sprite.active) {
-                    sprite.destroy();
-                }
-            });
-            this.cropSprites.delete(cropKey);
-        }
-
-        // Clean up wind effects
-        const tweens = this.windEffectTweens.get(cropKey);
-        if (tweens) {
-            tweens.forEach(tween => {
-                if (tween && tween.isPlaying()) {
-                    tween.remove();
-                }
-            });
-            this.windEffectTweens.delete(cropKey);
-        }
-
-        // Clean up timers
-        const timer1 = this.cropGrowthTimers.get(cropKey + '_stage1');
-        const timer2 = this.cropGrowthTimers.get(cropKey + '_stage2');
-        if (timer1) timer1.destroy();
-        if (timer2) timer2.destroy();
-        this.cropGrowthTimers.delete(cropKey + '_stage1');
-        this.cropGrowthTimers.delete(cropKey + '_stage2');
-
-        // Remove crop from map
-        this.crops.delete(cropKey);
-
-        // Create floating dropped carrot
-        const worldX = crop.x * 16 + 8 + Phaser.Math.Between(-4, 4);
-        const worldY = crop.y * 16 + 8 + Phaser.Math.Between(-4, 4);
-        
-        const droppedCarrot = this.add.sprite(worldX, worldY, 'carrot_stage3');
-        droppedCarrot.setScale(0.6);
-        droppedCarrot.setOrigin(0.5, 1);
-        droppedCarrot.setDepth(crop.y + 100);
-        droppedCarrot.setData('spawnTime', this.time.now);
-        droppedCarrot.setData('baseY', worldY);
-        
-        // Add glowing effect only
-        droppedCarrot.setTint(0xffff99); // Slight yellow tint
-        droppedCarrot.preFX?.addGlow(0xffd700, 4, 0, false, 0.3, 8); // Gold glow
-
-        // Store dropped carrot
-        const dropKey = `drop_${Date.now()}_${Math.random()}`;
-        this.droppedCarrots.set(dropKey, droppedCarrot);
-        this.harvestedCarrotCount++;
-        
-        // Notify HUD of harvest
-        this.hudBridge.onCropHarvested('Carrot', 1);
-
-        // Auto-mint carrot as NFT (lazy minting - background process)
-        const autoMint = AutoMintService.getInstance();
-        const carrotItemId = `carrot_${crop.x}_${crop.y}_${Date.now()}`;
-        autoMint.autoMintItem({
-            id: carrotItemId,
-            name: 'Carrot',
-            description: 'Freshly harvested carrot from OneValley farm',
-            type: 'consumable',
-            rarity: 1, // Common rarity
-            stats: [5, 10], // Small health boost
-        });
-        droppedCarrot.setData('gameItemId', carrotItemId);
-
-        // Play harvest animation - small pop up
-        this.tweens.add({
-            targets: droppedCarrot,
-            y: worldY - 10,
-            scale: 0.8,
-            duration: 200,
-            ease: 'Back.easeOut',
-            yoyo: false
-        });
-
-        // Reset harvesting state
-        this.time.delayedCall(300, () => {
-            this.isHarvesting = false;
-        });
-    }
-
-    private showHarvestFeedback(message: string): void {
-        // Create floating feedback text near the player
-        const headOffset = this.player.displayHeight ? this.player.displayHeight * 0.75 : 48;
-        const startY = this.player.y - headOffset;
-        const endY = startY - 20;
-
-        const feedbackText = this.add.text(
-            this.player.x,
-            startY,
-            message,
-            {
-                fontSize: '18px',
-                color: '#ff6b6b',
-                fontStyle: 'bold',
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                padding: { x: 10, y: 5 }
-            }
-        );
-        feedbackText.setOrigin(0.5, 1);
-        feedbackText.setScrollFactor(1);
-        feedbackText.setDepth(this.player.depth + 5);
-
-        const followEvent = this.time.addEvent({
-            delay: 16,
-            callback: () => {
-                if (!feedbackText.active) {
-                    followEvent.remove(false);
-                    return;
-                }
-                feedbackText.setX(this.player.x);
-            },
-            loop: true
-        });
-
-        this.tweens.add({
-            targets: feedbackText,
-            y: endY,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power2',
-            onComplete: () => {
-                followEvent.remove(false);
-                feedbackText.destroy();
-            }
-        });
-    }
-
-    private updateFloatingCarrots(): void {
-        const currentTime = this.time.now;
-        
-        this.droppedCarrots.forEach((carrot, key) => {
-            const spawnTime = carrot.getData('spawnTime');
-            const baseY = carrot.getData('baseY');
-            const elapsed = currentTime - spawnTime;
-            
-            // Floating animation
-            const floatOffset = Math.sin(elapsed / 500) * 3;
-            const newY = baseY - 10 + floatOffset;
-            carrot.setY(newY);
-        });
-    }
-
-    private createCollectButton(): void {
-        // Create container for button
-        this.collectButton = this.add.container(0, 0);
-        this.collectButton.setScrollFactor(0);
-        this.collectButton.setDepth(3500);
-        this.collectButton.setVisible(false);
-
-        // Background
-        const bg = this.add.graphics();
-        bg.fillStyle(0x4a7c59, 0.9);
-        bg.fillRoundedRect(-100, -20, 200, 40, 8);
-        bg.lineStyle(2, 0xffffff, 0.8);
-        bg.strokeRoundedRect(-100, -20, 200, 40, 8);
-
-        // Button text
-        this.collectButtonText = this.add.text(0, 0, 'Collect All (C)', {
-            fontSize: '16px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        this.collectButtonText.setOrigin(0.5);
-
-        this.collectButton.add([bg, this.collectButtonText]);
-
-        // Make interactive
-        const hitArea = new Phaser.Geom.Rectangle(-100, -20, 200, 40);
-        this.collectButton.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
-        
-        this.collectButton.on('pointerdown', () => {
-            this.tryCollectCarrots();
-        });
-
-        this.collectButton.on('pointerover', () => {
-            bg.clear();
-            bg.fillStyle(0x5a8c69, 0.95);
-            bg.fillRoundedRect(-100, -20, 200, 40, 8);
-            bg.lineStyle(2, 0xffffff, 1);
-            bg.strokeRoundedRect(-100, -20, 200, 40, 8);
-        });
-
-        this.collectButton.on('pointerout', () => {
-            bg.clear();
-            bg.fillStyle(0x4a7c59, 0.9);
-            bg.fillRoundedRect(-100, -20, 200, 40, 8);
-            bg.lineStyle(2, 0xffffff, 0.8);
-            bg.strokeRoundedRect(-100, -20, 200, 40, 8);
-        });
-    }
-
-    private createMintModal(): void {
-        if (this.mintModalCreated) return;
-        this.mintModalCreated = true;
-
-        // Create mint modal container (centered on screen)
-        this.mintModalContainer = this.add.container(0, 0);
-        this.mintModalContainer.setScrollFactor(0);
-        this.mintModalContainer.setDepth(20000); // Above other UI elements
-        this.mintModalContainer.setVisible(false);
-
-        // Add dark overlay (following transaction details modal pattern)
-        this.mintModalOverlay = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            this.cameras.main.width * 2,
-            this.cameras.main.height * 2,
-            0x0a0a0a,
-            0.8
-        );
-        this.mintModalOverlay.setOrigin(0.5);
-        this.mintModalOverlay.setScrollFactor(0);
-        this.mintModalOverlay.setDepth(50);
-        this.mintModalContainer.add(this.mintModalOverlay);
-
-        // Modal dimensions and styling (make it very small)
-        const modalWidth = 300; // Very small width
-        const modalHeight = 200; // Very small height
-        const padding = 15; // Smaller padding for compact modal
-        const titleHeight = 40; // Smaller title height
-        const closeButtonSize = 30; // Smaller close button
-
-        // Create modal background
-        const modalBg = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            modalWidth,
-            modalHeight,
-            0x2c3e50,
-            0.98
-        );
-        modalBg.setStrokeStyle(3, 0x3498db);
-        modalBg.setOrigin(0.5);
-        modalBg.setScrollFactor(0);
-        modalBg.setDepth(100);
-        this.mintModalContainer.add(modalBg);
-
-        // Add inner border for depth
-        const innerBorder = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            modalWidth - 8,
-            modalHeight - 8,
-            0x34495e,
-            0.4
-        );
-        innerBorder.setStrokeStyle(1, 0x5dade2);
-        innerBorder.setOrigin(0.5);
-        innerBorder.setScrollFactor(0);
-        innerBorder.setDepth(101);
-        this.mintModalContainer.add(innerBorder);
-
-        // Add decorative top border
-        const topBorder = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            modalWidth - 40,
-            4,
-            0x2ecc71
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
-        this.mintModalContainer.add(topBorder);
-
-        // Title background panel
-        const titlePanel = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            modalWidth - 40,
-            titleHeight,
-            0x34495e,
-            0.95
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
-        titlePanel.setStrokeStyle(2, 0x5dade2);
-        this.mintModalContainer.add(titlePanel);
-
-        // Title with emoji and styling
-        const title = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/5) + titleHeight/2,
-            '🥕 MINT CARROTS ON-CHAIN',
-            {
-                fontSize: '22px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#2ecc71',
-                fontStyle: 'bold',
-                shadow: {
-                    offsetX: 0,
-                    offsetY: 2,
-                    color: '#000000',
-                    blur: 4,
-                    stroke: true,
-                    fill: true
-                }
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        this.mintModalContainer.add(title);
-
-        // Close button with improved styling
-        const closeBtnX = this.cameras.main.centerX + (modalWidth/2) - padding - closeButtonSize/2;
-        const closeBtnY = this.cameras.main.centerY - (modalHeight/2) + titleHeight/2;
-
-        const closeBtnBg = this.add.circle(
-            closeBtnX,
-            closeBtnY,
-            closeButtonSize/2,
-            0xe74c3c,
-            0.9
-        ).setInteractive().setScrollFactor(0).setDepth(104);
-        closeBtnBg.setStrokeStyle(2, 0xc0392b);
-        this.mintModalContainer.add(closeBtnBg);
-
-        const closeBtn = this.add.text(
-            closeBtnX,
-            closeBtnY,
-            '✕',
-            {
-                fontSize: '20px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#ffffff',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(105);
-        this.mintModalContainer.add(closeBtn);
-
-        // Close button interactions
-        [closeBtnBg, closeBtn].forEach(element => {
-            element.on('pointerover', () => {
-                closeBtnBg.setFillStyle(0xf39c12);
-                closeBtnBg.setScale(1.1);
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-
-            element.on('pointerout', () => {
-                closeBtnBg.setFillStyle(0xe74c3c);
-                closeBtnBg.setScale(1);
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-
-            element.on('pointerdown', () => {
-                this.hideMintModal();
-            });
-        });
-
-        // Store close button reference
-        this.mintModalCloseButton = closeBtn;
-
-        // Create content panels
-        this.createMintModalContent(modalWidth, modalHeight, padding, titleHeight);
-    }
-
-    private createMintModalContent(modalWidth: number, modalHeight: number, padding: number, titleHeight: number): void {
-        // Carrot icon (smaller and compact)
-        const carrotIcon = this.add.sprite(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - 40,
-            'carrot_stage3'
-        );
-        carrotIcon.setScale(0.8); // Smaller for compact modal
-        carrotIcon.setScrollFactor(0);
-        carrotIcon.setDepth(103);
-        this.mintModalContainer.add(carrotIcon);
-
-        // Count text (compact for small modal)
-        const countText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - 10,
-            '0',
-            {
-                fontSize: '18px', // Smaller font for compact modal
-                fontFamily: 'Arial, sans-serif',
-                color: '#2ecc71',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        countText.setName('mintCountText');
-        this.mintModalContainer.add(countText);
-
-        // Description text (compact)
-        const desc = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 15,
-            'Mint as NFT?',
-            {
-                fontSize: '12px', // Very small font for compact modal
-                fontFamily: 'Arial, sans-serif',
-                color: '#ecf0f1',
-                align: 'center',
-                wordWrap: { width: modalWidth - 40 }
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        this.mintModalContainer.add(desc);
-
-        // Confirm button (positioned at bottom of small modal)
-        const confirmBtn = this.add.container(
-            this.cameras.main.centerX - 40,
-            this.cameras.main.centerY + 65 // Position for 200px height modal
-        );
-        confirmBtn.setScrollFactor(0);
-        confirmBtn.setDepth(103);
-
-        const confirmBg = this.add.rectangle(0, 0, 70, 25, 0x2ecc71);
-        confirmBg.setStrokeStyle(1, 0x27ae60);
-        confirmBtn.add(confirmBg);
-
-        const confirmText = this.add.text(0, 0, 'Mint', {
-            fontSize: '12px',
-            fontFamily: 'Arial, sans-serif',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        confirmBtn.add(confirmText);
-
-        confirmBtn.setInteractive(new Phaser.Geom.Rectangle(-35, -12.5, 70, 25), Phaser.Geom.Rectangle.Contains);
-        confirmBtn.on('pointerdown', () => {
-            this.hideMintModal();
-            this.executeMintTransaction(this.pendingMintCount);
-        });
-        confirmBtn.on('pointerover', () => {
-            confirmBg.setFillStyle(0x27ae60);
-            confirmBtn.setScale(1.05);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        confirmBtn.on('pointerout', () => {
-            confirmBg.setFillStyle(0x2ecc71);
-            confirmBtn.setScale(1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-        this.mintModalContainer.add(confirmBtn);
-
-        // Cancel button (positioned at bottom of small modal)
-        const cancelBtn = this.add.container(
-            this.cameras.main.centerX + 40,
-            this.cameras.main.centerY + 65 // Position for 200px height modal
-        );
-        cancelBtn.setScrollFactor(0);
-        cancelBtn.setDepth(103);
-
-        const cancelBg = this.add.rectangle(0, 0, 70, 25, 0xe74c3c);
-        cancelBg.setStrokeStyle(1, 0xc0392b);
-        cancelBtn.add(cancelBg);
-
-        const cancelText = this.add.text(0, 0, 'No', {
-            fontSize: '12px',
-            fontFamily: 'Arial, sans-serif',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        cancelBtn.add(cancelText);
-
-        cancelBtn.setInteractive(new Phaser.Geom.Rectangle(-35, -12.5, 70, 25), Phaser.Geom.Rectangle.Contains);
-        cancelBtn.on('pointerdown', () => {
-            this.hideMintModal();
-        });
-        cancelBtn.on('pointerover', () => {
-            cancelBg.setFillStyle(0xc0392b);
-            cancelBtn.setScale(1.05);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        cancelBtn.on('pointerout', () => {
-            cancelBg.setFillStyle(0xe74c3c);
-            cancelBtn.setScale(1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-        this.mintModalContainer.add(cancelBtn);
-    }
-
-    private showMintModal(count: number): void {
-        if (!this.mintModalCreated) {
-            this.createMintModal();
-        }
-
-        this.pendingMintCount = count;
-        this.mintModalVisible = true;
-        this.mintModalContainer.setVisible(true);
-
-        // Update the count text
-        const countText = this.mintModalContainer.getByName('mintCountText') as Phaser.GameObjects.Text;
-        if (countText) {
-            countText.setText(`${count} Carrots`);
-        }
-    }
-
-    private hideMintModal(): void {
-        this.mintModalVisible = false;
-        this.mintModalContainer.setVisible(false);
-        this.pendingMintCount = 0;
-    }
-
-    private updateCollectButton(): void {
-        if (!this.collectButton) return;
-
-        if (this.harvestedCarrotCount > 0 && !this.mintModalVisible) {
-            this.collectButton.setVisible(true);
-            this.collectButtonText.setText(`Collect All (${this.harvestedCarrotCount}) - Press C`);
-
-            // Position at bottom center of screen
-            const camera = this.cameras.main;
-            const x = camera.width / 2;
-            const y = camera.height - 60;
-            this.collectButton.setPosition(x, y);
-        } else {
-            this.collectButton.setVisible(false);
-        }
-    }
-
-    private tryCollectCarrots(): void {
-        if (this.harvestedCarrotCount === 0 || this.isCollecting || this.mintModalVisible) return;
-        this.isCollecting = true;
-
-        const count = this.harvestedCarrotCount;
-        
-        // Animate all carrots flying to center
-        const camera = this.cameras.main;
-        const targetX = camera.worldView.centerX;
-        const targetY = camera.worldView.centerY;
-
-        this.droppedCarrots.forEach((carrot, key) => {
-            // Animate carrot
-            this.tweens.add({
-                targets: carrot,
-                x: targetX,
-                y: targetY,
-                scale: 0.3,
-                alpha: 0.5,
-                duration: 500,
-                ease: 'Power2',
-                onComplete: () => {
-                    carrot.destroy();
-                }
-            });
-        });
-
-        // Clear dropped carrots and batch mint them
-        this.time.delayedCall(500, async () => {
-            const carrotItems: GameItem[] = [];
-
-            this.droppedCarrots.forEach((carrot) => {
-                const gameItemId = carrot.getData('gameItemId') as string | undefined;
-                const itemId = gameItemId || `carrot_${Date.now()}_${Phaser.Math.RND.uuid().slice(0, 6)}`;
-
-                carrotItems.push({
-                    id: itemId,
-                    name: 'Carrot',
-                    description: 'Freshly harvested carrot from OneValley farm',
-                    type: 'consumable',
-                    rarity: 1,
-                    stats: [5, 10],
-                });
-            });
-
-            this.droppedCarrots.clear();
-            this.harvestedCarrotCount = 0;
-            this.isCollecting = false;
-
-            // Batch mint all collected carrots using AutoMintService
-            const autoMint = AutoMintService.getInstance();
-
-            // Queue all carrots for batch minting (background process)
-            console.log(`🥕 Queueing ${carrotItems.length} carrots for auto-minting...`);
-            await autoMint.batchMintItems(carrotItems);
-
-            // Show collection notification
-            this.showTransactionNotification(`Collected ${carrotItems.length} carrots! Auto-minting in background...`, 'success', 3000);
-        });
-    }
-
-    // Old showMintConfirmationDialog method replaced with new modal pattern following transaction details modal
-    // Removed: showTransactionProgressDialog, updateTransactionDialog, showTransactionSuccessDialog methods
-    // Now using UIScene.showTransactionDetailsModal() for consistent UI
-
-    private async executeMintTransaction(count: number): Promise<void> {
-        try {
-            // Show transaction notification
-            this.showTransactionNotification('Initiating blockchain minting...', 'info', 3000);
-
-            // Check wallet bridge status first
-            if (!this.walletBridge.isWalletReady()) {
-                const connectionStatus = this.walletBridge.getConnectionStatus();
-                if (!connectionStatus.isConnected) {
-                    this.showTransactionNotification('Please connect your OneChain wallet first!', 'warning', 4000);
-                    return;
-                }
-                this.showTransactionNotification('Wallet services not ready. Please refresh the page.', 'warning', 4000);
-                return;
-            }
-
-            // Check wallet balance
-            try {
-                const balance = await this.walletBridge.getWalletBalance();
-                if (parseFloat(balance) < 0.01) { // Minimum 0.01 SUI for gas
-                    this.showTransactionNotification('Insufficient balance for minting fees!', 'warning', 4000);
-                    return;
-                }
-            } catch (balanceError) {
-                console.warn('Could not check wallet balance:', balanceError);
-            }
-
-            // Create crop data for minting
-            const mintBatchTimestamp = Date.now();
-            const crops = Array.from({ length: count }, (_, i) => ({
-                type: 'carrot' as const,
-                quality: 70 + Math.floor(Math.random() * 30), // Quality 70-100
-                quantity: 1,
-                harvestTimestamp: mintBatchTimestamp + i,
-                gameItemId: `carrot_mint_${mintBatchTimestamp}_${i}`
-            }));
-
-            // Execute real blockchain minting using wallet bridge
-            const mintResult = await this.oneChainHarvester.mintHarvestedCrops(crops);
-
-            if (mintResult.success) {
-                // Register minted NFTs with auto-mint registry for downstream systems
-                if (mintResult.itemIds && mintResult.itemIds.length > 0) {
-                    const autoMint = AutoMintService.getInstance();
-                    mintResult.itemIds.forEach((nftId, index) => {
-                        const sourceCrop = crops[index];
-                        const quality = sourceCrop?.quality ?? 70;
-                        const rarity = quality >= 90 ? 4 : quality >= 70 ? 3 : quality >= 50 ? 2 : 1;
-
-                        autoMint.registerMintedItem({
-                            id: sourceCrop?.gameItemId || nftId,
-                            name: `${sourceCrop?.type ?? 'Crop'} Harvest`,
-                            description: sourceCrop?.type
-                                ? `Freshly harvested ${sourceCrop.type} from OneValley`
-                                : 'Minted crop from OneValley farm',
-                            type: 'resource',
-                            rarity,
-                            stats: [quality, sourceCrop?.quantity ?? 1, 10]
-                        }, nftId);
-                    });
-                }
-
-                // Get UIScene and show real transaction details
-                const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
-                if (uiScene && mintResult.transactionFlow) {
-                    // Convert transaction flow to display format
-                    const mintTransaction = {
-                        transactionHash: mintResult.transactionHash!,
-                        blockNumber: mintResult.blockNumber,
-                        blockConfirmation: 'confirmed',
-                        gasUsed: mintResult.transactionFlow.gasUsed,
-                        gasPrice: '1000 MIST',
-                        gasCost: `${(mintResult.transactionFlow.gasCost / 1000000000).toFixed(6)} SUI`,
-                        timestamp: Date.now(),
-                        status: 'completed' as const,
-                        itemsTraded: {
-                            playerItems: [],
-                            npcItems: [
-                                {
-                                    id: `minted-carrot-${Date.now()}`,
-                                    name: `${count} Carrot NFT${count > 1 ? 's' : ''}`,
-                                    quantity: count,
-                                    spriteKey: 'carrot_stage3'
-                                }
-                            ]
-                        },
-                        transactionType: 'mint' as const,
-                        price: undefined,
-                        explorerUrl: this.walletBridge.getTransactionExplorerUrl(mintResult.transactionHash!)
-                    };
-
-                    console.log('Real minting transaction completed:', mintTransaction);
-
-                    // Set the transaction and show the modal using UIScene's existing system
-                    uiScene.currentTransaction = mintTransaction;
-                    uiScene.showTransactionDetailsModal();
-
-                    this.showTransactionNotification(
-                        `Successfully minted ${count} Carrot NFTs on OneChain! 🎉`,
-                        'success',
-                        5000
-                    );
-                }
-            } else {
-                this.showTransactionNotification(
-                    `Minting failed: ${mintResult.error || 'Unknown error'}`,
-                    'warning',
-                    4000
-                );
-            }
-        } catch (error) {
-            console.error('Error executing mint transaction:', error);
-            this.showTransactionNotification(
-                `Minting error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                'warning',
-                4000
-            );
-        }
-    }
-
     destroy(): void {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
-        if (this.windTimer) {
-            this.windTimer.destroy();
-        }
-
+        this.windTimer.destroy();
+        
         // Stop background music
         if (this.bgMusic) {
             this.bgMusic.stop();
         }
+    }
 
-        // Clean up contextual action system
-        if (this.floatingHintManager) {
-            this.floatingHintManager.destroy();
+    // In FarmScene class
+    public addItemToInventory(itemId: string, itemType: string): void {
+        const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+        if (!uiScene) return;
+
+        // Find first empty slot or implement your own logic
+        for (let i = 0; i < 8; i++) {
+            const slot = uiScene.getSlot(i); // You'll need to add this getter to UIScene
+            if (!slot?.itemId) {
+                uiScene.addItem(itemId, i, itemType);
+                break;
+            }
         }
     }
 }

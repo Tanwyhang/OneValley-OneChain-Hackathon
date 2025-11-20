@@ -125,46 +125,11 @@ export class OneChainTransactionService {
   }
 
   /**
-   * Validate if a string is a valid Sui object ID
-   * Must be 0x followed by 64 hexadecimal characters
-   */
-  private isValidSuiObjectId(id: string): boolean {
-    if (!id || typeof id !== 'string') return false;
-    
-    // Check if starts with 0x and has correct length
-    if (!id.startsWith('0x')) return false;
-    
-    // Remove 0x prefix and check if remaining part is valid hex
-    const hexPart = id.slice(2);
-    
-    // Must be 64 hex characters for a full object ID
-    if (hexPart.length !== 64) return false;
-    
-    // Check if all characters are valid hex (0-9, a-f, A-F)
-    return /^[0-9a-fA-F]{64}$/.test(hexPart);
-  }
-
-  /**
    * Lock an item for trading using the lock.move module
    */
   async lockItem(itemId: string): Promise<ItemLockResult> {
     if (!this.signer) {
       throw new Error('No wallet signer set. Use setSigner() first.');
-    }
-
-    if (!itemId) {
-      throw new Error('Item ID is required for locking');
-    }
-
-    if (!this.currentAddress) {
-      throw new Error('No current address set for transaction.');
-    }
-
-    console.log(`Attempting to lock item: ${itemId} for address: ${this.currentAddress}`);
-
-    // Validate that itemId is a valid Sui object ID (must be 0x + 64 hex chars)
-    if (!this.isValidSuiObjectId(itemId)) {
-      throw new Error(`Invalid Sui object ID: ${itemId}. Item must be minted as NFT first before locking.`);
     }
 
     const tx = new Transaction();
@@ -173,60 +138,23 @@ export class OneChainTransactionService {
     // tx.setSender(this.currentAddress); // ❌ Remove this line
 
     // Call the lock function from lock.move
-    try {
-      const [lockedItem, key] = tx.moveCall({
-        target: `${LOCK_MODULE}::lock`,
-        arguments: [tx.object(itemId)],
-        typeArguments: [] // Type will be inferred from the item
-      });
-    } catch (error) {
-      console.error('Failed to create moveCall:', error);
-      throw new Error(`Failed to create lock transaction: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const [lockedItem, key] = tx.moveCall({
+      target: `${LOCK_MODULE}::lock`,
+      arguments: [tx.object(itemId)],
+      typeArguments: [] // Type will be inferred from the item
+    });
 
     // Execute transaction using OneChain SDK standard pattern
-    let result;
-    try {
-      console.log('Executing transaction with signer...');
-      const signerResult = this.signer.signAndExecuteTransaction({
-        transaction: tx,
-        options: {
-          showObjectChanges: true,
-          showEffects: true
-        }
-      });
-      
-      // Ensure we await the result properly
-      result = await signerResult;
-      
-      console.log('Transaction executed, result type:', typeof result);
-      console.log('Transaction result:', result);
-      
-    } catch (error) {
-      console.error('Transaction execution failed:', error);
-      throw new Error(`Transaction execution failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const result = await this.signer.signAndExecuteTransaction({
+      transaction: tx,
+      options: {
+        showObjectChanges: true,
+        showEffects: true
+      }
+    });
 
-    // Debug: Log the result structure
-    console.log('Transaction result structure:', JSON.stringify(result, null, 2));
-
-    // Validate result structure
-    if (!result) {
-      console.error('Transaction returned null/undefined result');
-      console.error('Signer type:', typeof this.signer);
-      console.error('Signer keys:', this.signer ? Object.keys(this.signer) : 'null');
-      throw new Error('Transaction returned no result - signer may not be properly configured');
-    }
-
-    // Check for transaction success with proper error handling
-    if (!result.effects) {
-      console.error('Transaction result missing effects:', result);
-      throw new Error('Transaction result missing effects property');
-    }
-
-    if (result.effects.status?.status !== 'success') {
-      const errorMsg = result.effects.status?.error || 'Unknown transaction error';
-      throw new Error(`Transaction failed: ${errorMsg}`);
+    if (result.effects?.status.status !== 'success') {
+      throw new Error(`Transaction failed: ${result.effects?.status.error}`);
     }
 
     // Extract created object IDs from the transaction response

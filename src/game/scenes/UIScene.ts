@@ -1,22 +1,13 @@
 import * as Phaser from 'phaser';
 import { SCENE_KEYS } from './SceneKeys';
 import { EventBus } from '../EventBus';
-import { SuiClient } from '@onelabs/sui/client';
-import { ONECHAIN_NETWORK } from '@/config/contracts';
-import WalletBridgeService from '@/services/WalletBridgeService';
-import HUDBridgeService from '@/services/HUDBridgeService';
-import OneChainMarketplaceService from '@/services/OneChainMarketplaceService';
-import OneChainTransactionFlow, { TransactionType } from '@/services/OneChainTransactionFlow';
-import { OneChainTransactionService } from '@/services/OneChainTransactionService';
-import AutoMintService, { GameItem } from '@/services/AutoMintService';
-import { FrontendItem, MarketplaceListing, ITEM_TYPES, ItemType, getRarityColor } from '@/types/onechain';
 // 1. First, let's update the Slot interface at the top of the file
 interface Slot {
     bg: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
     x: number;
     y: number;
     itemId?: string;  // The unique identifier for the item
-    itemImage?: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;  // The actual image in the slot
+    itemImage?: Phaser.GameObjects.Image;  // The actual image in the slot
     countText?: Phaser.GameObjects.Text;  // Text showing item count
     itemType?: string;  // e.g., 'weapon', 'consumable', 'tool'
 }
@@ -80,15 +71,6 @@ export class UIScene extends Phaser.Scene {
     private marketplaceCreated: boolean = false;
     private selectedMarketplaceSlot: number = -1;
 
-    // Transaction details properties
-    private transactionDetailsContainer!: Phaser.GameObjects.Container;
-    private transactionDetailsBg!: Phaser.GameObjects.Image;
-    private transactionDetailsVisible: boolean = false;
-    private transactionDetailsCreated: boolean = false;
-    private transactionDetailsCloseButton!: Phaser.GameObjects.GameObject;
-    private transactionDetailsTexts: Phaser.GameObjects.Text[] = [];
-    private marketplaceTransactionNotificationContainer?: Phaser.GameObjects.Container;
-
     // Guide menu properties
     private guideMenuVisible: boolean = false;
     private guideMenuContainer?: Phaser.GameObjects.Container;
@@ -98,17 +80,12 @@ export class UIScene extends Phaser.Scene {
     private settingsMenuVisible: boolean = false;
     private settingsMenuContainer?: Phaser.GameObjects.Container;
     private settingsMenuOverlay?: Phaser.GameObjects.Rectangle;
-    private volumeSliderKnob?: Phaser.GameObjects.Arc;
+    private volumeSliderKnob?: Phaser.GameObjects.Circle;
     private volumeValueText?: Phaser.GameObjects.Text;
     private fullscreenCheckbox?: Phaser.GameObjects.Rectangle;
     private fullscreenCheckmark?: Phaser.GameObjects.Text;
     private isFullscreen: boolean = false;
     private musicVolume: number = 0.5;
-
-    // Exit confirmation properties
-    private exitConfirmationVisible: boolean = false;
-    private exitConfirmationContainer?: Phaser.GameObjects.Container;
-    private exitConfirmationOverlay?: Phaser.GameObjects.Rectangle;
 
     // NPC Trade Inventory properties
     private npcTradeContainer!: Phaser.GameObjects.Container;
@@ -122,33 +99,17 @@ export class UIScene extends Phaser.Scene {
     private npcAcceptButton?: Phaser.GameObjects.Text;
     private npcPlayerTick?: Phaser.GameObjects.Text;
     private npcHermanTick?: Phaser.GameObjects.Text;
-    private npcHermanItems: string[] = []; // Will be populated from blockchain
+    private npcHermanItems: string[] = ['potion_01a', 'fish_01a', 'candy_01a', 'helmet_01a']; // Hardcoded items for Herman
     private npcConfirmModal?: Phaser.GameObjects.Container;
     private npcConfirmOverlay?: Phaser.GameObjects.Rectangle;
 
-    // Transaction details properties
-    public currentTransaction: import('../../types/onechain').TransactionDetails | null = null;
-    private transactionDetailsButton?: Phaser.GameObjects.Container;
-    private transactionDetailsButtonBg?: Phaser.GameObjects.Rectangle;
-    private transactionDetailsButtonText?: Phaser.GameObjects.Text;
-
-    // Marketplace item data - only used as fallback if blockchain fails
-    private readonly FALLBACK_MARKETPLACE_ITEMS = {
+    // Marketplace item data
+    private readonly MARKETPLACE_ITEMS = {
         Weapons: ['sword_01a', 'sword_01b', 'sword_01c', 'sword_01d', 'sword_01e', 'sword_02a', 'sword_02b', 'sword_02c', 'sword_02d', 'sword_02e', 'bow_01a', 'bow_01b', 'bow_01d', 'bow_01e', 'bow_02a', 'bow_02b', 'bow_02d', 'bow_02e', 'arrow_01a', 'arrow_01b', 'arrow_02a', 'arrow_02b', 'shield_01a', 'shield_01b', 'shield_02a', 'shield_02b', 'staff_01a', 'staff_01b', 'spellbook_01a', 'spellbook_01b'],
         Armors: ['helmet_01a', 'helmet_01b', 'helmet_01c', 'helmet_01d', 'helmet_01e', 'helmet_02a', 'helmet_02b', 'helmet_02c', 'helmet_02d', 'helmet_02e'],
         Misc: ['book_01a', 'book_01b', 'book_02a', 'book_02b', 'coin_01a', 'coin_01b', 'coin_02a', 'coin_02b', 'crystal_01a', 'crystal_01b', 'gem_01a', 'gem_01b', 'gift_01a', 'gift_01b', 'ingot_01a', 'ingot_01b', 'key_01a', 'key_01b', 'necklace_01a', 'necklace_01b', 'pearl_01a', 'pearl_01b', 'ring_01a', 'ring_01b', 'scroll_01a', 'scroll_01b', 'scroll_01c', 'scroll_01d', 'scroll_01e', 'scroll_01f'],
         Consumables: ['potion_01a', 'potion_01b', 'potion_01c', 'potion_01d', 'potion_01e', 'potion_01f', 'potion_01g', 'potion_01h', 'potion_02a', 'potion_02b', 'potion_02c', 'potion_02d', 'potion_02e', 'potion_02f', 'potion_03a', 'potion_03b', 'fish_01a', 'fish_01b', 'fish_01c', 'fish_01d', 'fish_01e', 'candy_01a', 'candy_01b', 'candy_01c', 'candy_01d', 'candy_01e', 'candy_01f', 'candy_01g', 'candy_02a', 'candy_02b']
     };
-
-    // OneChain Blockchain Properties
-    private oneChainMarketplaceService: OneChainMarketplaceService;
-    private oneChainTransactionFlow: OneChainTransactionFlow;
-    private oneChainTransactionService: OneChainTransactionService;
-    private suiClient!: SuiClient;
-    private marketplaceListings: MarketplaceListing[] = [];
-    private currentMarketplaceTab: 'browse' | 'my_kiosk' | 'sell' = 'browse';
-    private blockchainItems: Map<string, FrontendItem> = new Map();
-    private isProcessingTransaction: boolean = false;
 
     constructor() {
         super({
@@ -171,9 +132,6 @@ export class UIScene extends Phaser.Scene {
         this.backpackSlots = [];
         this.slots = [];
         this.marketplaceVisible = false;
-        this.transactionDetailsCreated = false;
-        this.transactionDetailsVisible = false;
-        this.currentTransaction = null;
         this.backpackVisible = false;
         this.guideMenuVisible = false;
         this.settingsMenuVisible = false;
@@ -185,23 +143,6 @@ export class UIScene extends Phaser.Scene {
         this.settingsMenuOverlay = undefined;
         this.npcLeftSlots = [];
         this.npcRightSlots = [];
-
-        // Initialize OneChain services
-        this.suiClient = new SuiClient({ url: ONECHAIN_NETWORK.RPC_URL });
-        this.oneChainMarketplaceService = OneChainMarketplaceService.getInstance();
-        this.oneChainTransactionFlow = OneChainTransactionFlow.getInstance();
-
-        // Get transaction service from WalletBridgeService (has signer properly set)
-        const walletBridge = WalletBridgeService.getInstance();
-        this.oneChainTransactionService = walletBridge.getTransactionService() || new OneChainTransactionService(this.suiClient);
-
-        this.marketplaceListings = [];
-        this.blockchainItems.clear();
-        this.isProcessingTransaction = false;
-        this.currentMarketplaceTab = 'browse';
-
-        // Initialize NPC items from blockchain
-        this.initializeNPCItems();
 
         // Create main HUD container with high depth
         this.#hudContainer = this.add.container(0, 0).setDepth(10000);
@@ -393,9 +334,7 @@ export class UIScene extends Phaser.Scene {
 
         // Add keyboard controls for slot selection (1-8)
         for (let i = 0; i < this.SLOT_COUNT; i++) {
-            // Use direct key codes: 49='1', 50='2', ..., 56='8'
-          const keyCode = 49 + i;
-          const key = this.input.keyboard?.addKey(keyCode);
+            const key = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes[i + 49]); // 49 is keycode for '1'
             const handler = () => {
                 this.selectedIndex = i;
                 this.updateSelection();
@@ -461,11 +400,10 @@ export class UIScene extends Phaser.Scene {
         } else {
             console.warn(`Texture not found: ${textureKey}`);
             // Add a placeholder for debugging
-            const placeholderImage = this.add.rectangle(slot.x, slot.y, 32, 32, 0xff0000)
+            slot.itemImage = this.add.rectangle(slot.x, slot.y, 32, 32, 0xff0000)
                 .setOrigin(0.5, 0.5)
                 .setDepth(1000 + slotIndex);
-            slot.itemImage = placeholderImage;
-            this.itemBarContainer.add(placeholderImage);
+            this.itemBarContainer.add(slot.itemImage);
         }
 
         // Add item count if more than 1
@@ -545,18 +483,13 @@ export class UIScene extends Phaser.Scene {
         this.backpackKey.on('down', () => {
             const farmScene = this.scene.get(SCENE_KEYS.FARM);
             if (farmScene && farmScene.scene.isActive()) {
-                const hudBridge = HUDBridgeService.getInstance();
-                
                 if (this.backpackVisible) {
                     this.hideBackpack();
-                    hudBridge.toggleBackpack(false);
                 } else if (this.marketplaceVisible) {
                     this.marketplaceContainer.setVisible(false);
                     this.showBackpack();
-                    hudBridge.toggleBackpack(true);
                 } else {
                     this.showBackpack();
-                    hudBridge.toggleBackpack(true);
                 }
             }
         });
@@ -564,9 +497,7 @@ export class UIScene extends Phaser.Scene {
         // Add 'ESC' key to close marketplace/backpack
         const escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         escKey.on('down', () => {
-            if (this.transactionDetailsVisible) {
-                this.hideTransactionDetails();
-            } else if (this.backpackVisible) {
+            if (this.backpackVisible) {
                 this.hideBackpack();
                 // If marketplace was open before, show it back
                 if (this.marketplaceVisible) {
@@ -574,47 +505,6 @@ export class UIScene extends Phaser.Scene {
                 }
             } else if (this.marketplaceVisible) {
                 this.hideMarketplace();
-            }
-        });
-
-        // Add 'T' key to test transaction details modal
-        const testKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.T);
-        testKey.on('down', () => {
-            const farmScene = this.scene.get(SCENE_KEYS.FARM);
-            if (farmScene && farmScene.scene.isActive()) {
-                // Create a test transaction
-                const testTransaction = {
-                    transactionHash: 'SVCtuZctTDzSKU2Q2LTVKjQ9avcMSNE8x1paJkYmeff',
-                    blockNumber: 12345,
-                    blockConfirmation: 'confirmed',
-                    gasUsed: 2500000,
-                    gasPrice: '1000 MIST',
-                    gasCost: '0.0025 SUI',
-                    timestamp: Date.now(),
-                    status: 'completed' as const,
-                    itemsTraded: {
-                        playerItems: [
-                            {
-                                id: 'test-item-1',
-                                name: 'Test Sword',
-                                quantity: 1,
-                                spriteKey: 'sword_a'
-                            }
-                        ],
-                        npcItems: [
-                            {
-                                id: 'test-item-2',
-                                name: 'Test Shield',
-                                quantity: 1,
-                                spriteKey: 'shield_a'
-                            }
-                        ]
-                    }
-                };
-
-                console.log('Testing transaction details modal with:', testTransaction);
-                this.currentTransaction = testTransaction;
-                this.showTransactionDetailsModal();
             }
         });
     }
@@ -628,10 +518,6 @@ export class UIScene extends Phaser.Scene {
         if (index < 0 || index >= this.SLOT_COUNT) return;
         this.selectedIndex = index;
         this.updateSelection();
-        
-        // Update React HUD
-        const hudBridge = HUDBridgeService.getInstance();
-        hudBridge.setSelectedSlot(index);
     }
 
     // 2. Add a method to get the currently selected item
@@ -1201,11 +1087,10 @@ export class UIScene extends Phaser.Scene {
             this.backpackContainer.add(slot.itemImage);
         } else {
             console.warn(`Texture not found: ${itemId}`);
-            const placeholderImage = this.add.rectangle(slot.x, slot.y, 32, 32, 0xff0000)
+            slot.itemImage = this.add.rectangle(slot.x, slot.y, 32, 32, 0xff0000)
                 .setOrigin(0.5, 0.5)
                 .setDepth(1000 + slotIndex);
-            slot.itemImage = placeholderImage;
-            this.backpackContainer.add(placeholderImage);
+            this.backpackContainer.add(slot.itemImage);
         }
 
         // Add item count if more than 1
@@ -1326,14 +1211,6 @@ export class UIScene extends Phaser.Scene {
     }
 
     private createMarketplaceButtons(marketplaceScale: number): void {
-        // Main marketplace tabs
-        const tabs = [
-            { name: 'Browse', type: 'browse', x: 50, y: 1, width: 80, height: 32 },
-            { name: 'My Kiosk', type: 'my_kiosk', x: 140, y: 1, width: 90, height: 32 },
-            { name: 'Sell', type: 'sell', x: 240, y: 1, width: 60, height: 32 }
-        ];
-
-        // Item category filters for Browse tab
         const categories = [
             { name: 'Weapons', x: 113, y: 1, width: 48, height: 32 },
             { name: 'Armors', x: 161, y: 1, width: 48, height: 32 },
@@ -1347,84 +1224,37 @@ export class UIScene extends Phaser.Scene {
         const frameWidth = this.marketplaceBg.width * marketplaceScale;
         const frameHeight = this.marketplaceBg.height * marketplaceScale;
 
-        // Create tab buttons
-        tabs.forEach((tab, index) => {
-            const absoluteX = frameCenterX - (frameWidth / 2) + (tab.x * marketplaceScale) + (tab.width * marketplaceScale / 2);
-            const absoluteY = frameCenterY - (frameHeight / 2) + (tab.y * marketplaceScale) + (tab.height * marketplaceScale / 2);
+        categories.forEach((cat, index) => {
+            // Convert relative position to absolute
+            const absoluteX = frameCenterX - (frameWidth / 2) + (cat.x * marketplaceScale) + (cat.width * marketplaceScale / 2);
+            const absoluteY = frameCenterY - (frameHeight / 2) + (cat.y * marketplaceScale) + (cat.height * marketplaceScale / 2);
 
-            // Create tab button text (since we don't have custom tab images)
-            const buttonBg = this.add.rectangle(absoluteX, absoluteY, tab.width * marketplaceScale, tab.height * marketplaceScale, 0x2a2a2a);
-            buttonBg.setStrokeStyle(2, this.currentMarketplaceTab === tab.type ? 0x3b82f6 : 0x4a4a4a);
-            buttonBg.setOrigin(0.5);
-            buttonBg.setInteractive({ useHandCursor: true });
-            buttonBg.setDepth(200);
-
-            const buttonText = this.add.text(absoluteX, absoluteY, tab.name, {
-                fontSize: '14px',
-                color: this.currentMarketplaceTab === tab.type ? '#ffffff' : '#9ca3af',
-                fontStyle: 'bold'
-            });
-            buttonText.setOrigin(0.5);
-            buttonText.setDepth(201);
+            // Create button
+            const catName = cat.name.toLowerCase();
+            const button = this.add.image(absoluteX, absoluteY, `btn-${catName}`);
+            button.setOrigin(0.5);
+            button.setScale(marketplaceScale);
+            button.setInteractive({ useHandCursor: true });
+            button.setDepth(200);
 
             // Click handler
-            buttonBg.on('pointerdown', () => this.selectMarketplaceTab(tab.type as any));
+            button.on('pointerdown', () => this.selectCategory(cat.name as any, index));
 
             // Hover effects
-            buttonBg.on('pointerover', () => {
-                if (this.currentMarketplaceTab !== tab.type) {
-                    buttonBg.setStrokeStyle(2, 0x6b7280);
+            button.on('pointerover', () => {
+                if (this.selectedCategory !== cat.name) {
+                    button.setScale(marketplaceScale * 1.05);
                 }
                 this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
             });
-            buttonBg.on('pointerout', () => {
-                if (this.currentMarketplaceTab !== tab.type) {
-                    buttonBg.setStrokeStyle(2, 0x4a4a4a);
-                }
+            button.on('pointerout', () => {
+                button.setScale(marketplaceScale);
                 this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
             });
 
-            this.marketplaceContainer.add(buttonBg);
-            this.marketplaceContainer.add(buttonText);
-
-            // Store tab elements
-            this.marketplaceContainer.setData(`tab_${tab.type}`, { bg: buttonBg, text: buttonText });
+            this.marketplaceButtons.push(button);
+            this.marketplaceContainer.add(button);
         });
-
-        // Create category filter buttons (only visible in Browse tab)
-        if (this.currentMarketplaceTab === 'browse') {
-            categories.forEach((cat, index) => {
-                // Convert relative position to absolute
-                const absoluteX = frameCenterX - (frameWidth / 2) + (cat.x * marketplaceScale) + (cat.width * marketplaceScale / 2);
-                const absoluteY = frameCenterY - (frameHeight / 2) + (cat.y * marketplaceScale) + (cat.height * marketplaceScale / 2) + 40;
-
-                // Create button
-                const catName = cat.name.toLowerCase();
-                const button = this.add.image(absoluteX, absoluteY, `btn-${catName}`);
-                button.setOrigin(0.5);
-                button.setScale(marketplaceScale);
-                button.setInteractive({ useHandCursor: true });
-                button.setDepth(200);
-
-                // Click handler
-                button.on('pointerdown', () => this.selectCategory(cat.name as any, index));
-
-                // Hover effects
-                button.on('pointerover', () => {
-                    if (this.selectedCategory !== cat.name) {
-                        button.setScale(marketplaceScale * 1.05);
-                    }
-                    this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-                });
-                button.on('pointerout', () => {
-                    button.setScale(marketplaceScale);
-                    this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-                });
-
-                this.marketplaceButtons.push(button);
-                this.marketplaceContainer.add(button);
-            });
-        }
 
         // Select first button (Weapons) by default
         this.selectedCategory = 'Weapons';
@@ -1432,190 +1262,6 @@ export class UIScene extends Phaser.Scene {
             this.marketplaceButtons[0].setTexture('btn-weapons-selected');
         }
         this.loadMarketplaceItems('Weapons');
-    }
-
-    private selectMarketplaceTab(tab: 'browse' | 'my_kiosk' | 'sell'): void {
-        if (this.isProcessingTransaction) return;
-
-        this.currentMarketplaceTab = tab;
-
-        // Update tab button appearances
-        ['browse', 'my_kiosk', 'sell'].forEach(tabType => {
-            const tabElements = this.marketplaceContainer.getData(`tab_${tabType}`);
-            if (tabElements) {
-                const isSelected = tabType === tab;
-                tabElements.bg.setStrokeStyle(2, isSelected ? 0x3b82f6 : 0x4a4a4a);
-                tabElements.text.setColor(isSelected ? '#ffffff' : '#9ca3af');
-            }
-        });
-
-        // Clear current marketplace slots
-        this.clearMarketplaceSlots();
-
-        // Load content based on selected tab
-        switch (tab) {
-            case 'browse':
-                this.loadMarketplaceItems(this.selectedCategory);
-                break;
-            case 'my_kiosk':
-                this.loadPlayerKiosk();
-                break;
-            case 'sell':
-                this.loadSellInterface();
-                break;
-        }
-    }
-
-    private async initializeNPCItems(): Promise<void> {
-        try {
-            // In a real implementation, NPC items would be stored on-chain
-            // For now, fetch from marketplace service with different item types
-            const [consumables, weapons, armor, misc] = await Promise.all([
-                this.oneChainMarketplaceService.fetchMarketplaceItems(ITEM_TYPES.CONSUMABLE),
-                this.oneChainMarketplaceService.fetchMarketplaceItems(ITEM_TYPES.WEAPON),
-                this.oneChainMarketplaceService.fetchMarketplaceItems(ITEM_TYPES.ARMOR),
-                this.oneChainMarketplaceService.fetchMarketplaceItems(ITEM_TYPES.RESOURCE)
-            ]);
-
-            // Create diverse inventory for Herman from different categories
-            const allItems = [
-                ...consumables.slice(0, 3).map((item: any) => item.item.sprite_key),
-                ...weapons.slice(0, 2).map((item: any) => item.item.sprite_key),
-                ...armor.slice(0, 2).map((item: any) => item.item.sprite_key),
-                ...misc.slice(0, 2).map((item: any) => item.item.sprite_key)
-            ].filter(Boolean); // Remove any undefined values
-
-            this.npcHermanItems = allItems.length > 0 ? allItems : ['potion_01a', 'fish_01a', 'candy_01a', 'helmet_01a'];
-        } catch (error) {
-            console.error('Failed to initialize NPC items:', error);
-            // Enhanced fallback items for Herman - more diverse inventory
-            this.npcHermanItems = [
-                'potion_01a', 'potion_02a',  // Health potions
-                'fish_01a', 'candy_01a',  // Food items
-                'helmet_01a', 'sword_01a', // Equipment
-                'crystal_01a', 'gem_01a',  // Valuable items
-                'scroll_01a', 'ring_01a'   // Magical items
-            ];
-        }
-    }
-
-    private clearMarketplaceSlots(): void {
-        // Clear existing slot items
-        this.marketplaceSlots.forEach(slot => {
-            if (slot.itemImage) {
-                slot.itemImage.destroy();
-            }
-            if (slot.countText) {
-                slot.countText.destroy();
-            }
-        });
-        this.marketplaceSlots = [];
-    }
-
-    private async loadPlayerKiosk(): Promise<void> {
-        try {
-            // Fetch player kiosk data from blockchain using connected wallet
-            const kiosk = await this.oneChainMarketplaceService.fetchPlayerKiosk();
-
-            // Display kiosk items in marketplace slots
-            this.displayKioskItems(kiosk);
-        } catch (error) {
-            console.error('Failed to load player kiosk:', error);
-            // Show error message
-            this.showMarketplaceError('Failed to load your kiosk. Please connect your wallet.');
-        }
-    }
-
-    private displayKioskItems(kiosk: any): void {
-        this.clearMarketplaceSlots();
-
-        if (!kiosk) {
-            // Show empty kiosk message
-            this.showEmptyKioskMessage();
-            return;
-        }
-
-        // Display listed items
-        const items = kiosk.listed_items || [];
-        items.forEach((item: any, index: number) => {
-            if (index < this.MARKETPLACE_SLOT_COUNT) {
-                this.addKioskItemToSlot(item, index);
-            }
-        });
-    }
-
-    private showEmptyKioskMessage(): void {
-        const message = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            'Your kiosk is empty\nList items from your inventory to start selling!',
-            {
-                fontSize: '18px',
-                color: '#9ca3af',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 2
-            }
-        );
-        message.setOrigin(0.5);
-        message.setScrollFactor(0);
-        message.setDepth(300);
-        this.marketplaceContainer.add(message);
-    }
-
-    private loadSellInterface(): void {
-        this.clearMarketplaceSlots();
-
-        // Show instructions
-        const instructions = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - 100,
-            'Drag items from your inventory here to list them for sale',
-            {
-                fontSize: '16px',
-                color: '#ffffff',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        );
-        instructions.setOrigin(0.5);
-        instructions.setScrollFactor(0);
-        instructions.setDepth(300);
-        this.marketplaceContainer.add(instructions);
-
-        // Create drop zone indicator
-        const dropZone = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 20,
-            300, 150,
-            0x2a2a2a,
-            0.5
-        );
-        dropZone.setStrokeStyle(2, 0x3b82f6);
-        dropZone.setScrollFactor(0);
-        dropZone.setDepth(250);
-        this.marketplaceContainer.add(dropZone);
-
-        const dropText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 20,
-            'DROP ZONE\n\nPlace items here to sell',
-            {
-                fontSize: '14px',
-                color: '#9ca3af',
-                align: 'center'
-            }
-        );
-        dropText.setOrigin(0.5);
-        dropText.setScrollFactor(0);
-        dropText.setDepth(260);
-        this.marketplaceContainer.add(dropText);
-
-        // Open backpack automatically for easy access
-        if (!this.backpackVisible) {
-            this.showBackpack();
-        }
     }
 
     private createMarketplaceSlots(marketplaceScale: number): void {
@@ -1806,7 +1452,7 @@ export class UIScene extends Phaser.Scene {
         sellButton.setPosition(sellX, sellY);
     }
 
-    private async loadMarketplaceItems(category: string): Promise<void> {
+    private loadMarketplaceItems(category: string): void {
         // Clear selection and reset all slot textures
         if (this.selectedMarketplaceSlot !== -1) {
             const prevSlot = this.marketplaceSlots[this.selectedMarketplaceSlot];
@@ -1830,89 +1476,29 @@ export class UIScene extends Phaser.Scene {
             slot.itemType = undefined;
         });
 
-        try {
-            // Load real blockchain marketplace data
-            // Convert string category to ItemType
-            const categoryMap: { [key: string]: number } = {
-                'weapons': ITEM_TYPES.WEAPON,
-                'armor': ITEM_TYPES.ARMOR,
-                'consumables': ITEM_TYPES.CONSUMABLE,
-                'misc': ITEM_TYPES.RESOURCE
-            };
-            const itemType = (categoryMap[category.toLowerCase()] || ITEM_TYPES.CONSUMABLE) as ItemType;
-            const listings = await this.oneChainMarketplaceService.fetchMarketplaceItems(itemType);
+        // Get items for category
+        const items = this.MARKETPLACE_ITEMS[category as keyof typeof this.MARKETPLACE_ITEMS] || [];
+        
+        // Populate slots with items (max 30)
+        items.forEach((itemId, index) => {
+            if (index >= this.MARKETPLACE_SLOT_COUNT) return;
+            
+            const slot = this.marketplaceSlots[index];
+            if (!slot) return;
 
-            // Store listings for purchase functionality
-            this.marketplaceListings = listings;
-
-            // Populate slots with real blockchain items
-            listings.forEach((listing, index) => {
-                if (index >= this.MARKETPLACE_SLOT_COUNT) return;
-
-                const slot = this.marketplaceSlots[index];
-                if (!slot) return;
-
-                // Add item image
-                const itemSpriteKey = listing.item?.sprite_key || 'default-item';
-                if (this.textures.exists(itemSpriteKey)) {
-                    slot.itemImage = this.add.image(slot.x, slot.y, itemSpriteKey)
-                        .setDisplaySize(32, 32)
-                        .setOrigin(0.5, 0.5)
-                        .setDepth(250);
-                    this.marketplaceContainer.add(slot.itemImage);
-
-                    slot.itemId = listing.id || `item_${index}`;
-                    slot.itemType = category.toLowerCase();
-
-                    // Add price text
-                    const priceText = this.add.text(slot.x, slot.y + 20, `${listing.price.toLocaleString()} ◈`, {
-                        fontSize: '10px',
-                        color: '#10b981',
-                        align: 'center'
-                    });
-                    priceText.setOrigin(0.5);
-                    priceText.setScrollFactor(0);
-                    priceText.setDepth(260);
-                    this.marketplaceContainer.add(priceText);
-                    slot.countText = priceText;
-
-                    // Add rarity border
-                    const rarityColor = getRarityColor(listing.item.rarity);
-                    const rarityBorder = this.add.rectangle(slot.x, slot.y, 36, 36, 0x000000, 0);
-                    rarityBorder.setStrokeStyle(2, parseInt(rarityColor.replace('#', '0x')));
-                    rarityBorder.setScrollFactor(0);
-                    rarityBorder.setDepth(249);
-                    this.marketplaceContainer.add(rarityBorder);
-                }
-            });
-
-        } catch (error) {
-            console.error('Failed to load marketplace items:', error);
-
-            // Fallback to items if blockchain fails
-            const items = this.FALLBACK_MARKETPLACE_ITEMS[category as keyof typeof this.FALLBACK_MARKETPLACE_ITEMS] || [];
-
-            // Populate slots with mock items (max 30)
-            items.forEach((itemId, index) => {
-                if (index >= this.MARKETPLACE_SLOT_COUNT) return;
-
-                const slot = this.marketplaceSlots[index];
-                if (!slot) return;
-
-                // Add item image
-                if (this.textures.exists(itemId)) {
-                    slot.itemImage = this.add.image(slot.x, slot.y, itemId)
-                        .setDisplaySize(32, 32)
-                        .setOrigin(0.5, 0.5)
-                        .setDepth(250);
-                    this.marketplaceContainer.add(slot.itemImage);
-
-                    slot.itemId = itemId;
-                    slot.itemType = category.toLowerCase();
-                }
-            });
-        }  // Close catch block
-    }  // Close function
+            // Add item image
+            if (this.textures.exists(itemId)) {
+                slot.itemImage = this.add.image(slot.x, slot.y, itemId)
+                    .setDisplaySize(32, 32)
+                    .setOrigin(0.5, 0.5)
+                    .setDepth(250);
+                this.marketplaceContainer.add(slot.itemImage);
+                
+                slot.itemId = itemId;
+                slot.itemType = category.toLowerCase();
+            }
+        });
+    }
 
     private selectMarketplaceSlot(slotIndex: number): void {
         const slot = this.marketplaceSlots[slotIndex];
@@ -1931,124 +1517,19 @@ export class UIScene extends Phaser.Scene {
         (slot.bg as Phaser.GameObjects.Image).setTexture('selected-slot');
     }
 
-    private async handleBuyItem(): Promise<void> {
+    private handleBuyItem(): void {
         if (this.selectedMarketplaceSlot === -1) return;
-        if (this.isProcessingTransaction) return;
-
+        
         const slot = this.marketplaceSlots[this.selectedMarketplaceSlot];
         if (!slot || !slot.itemId) return;
 
-        try {
-            this.isProcessingTransaction = true;
-            this.showTransactionProgress('Purchasing item...');
-
-            // Execute real blockchain purchase
-            const result = await this.oneChainMarketplaceService.purchaseItem(slot.itemId);
-
-            if (result.success) {
-                this.showTransactionSuccess('Item purchased successfully!');
-                this.addMarketplaceItemToInventory(slot.itemId, slot.itemType || 'item');
-
-                // Remove item from marketplace display
-                if (slot.itemImage) {
-                    slot.itemImage.destroy();
-                    slot.itemImage = undefined;
-                }
-                if (slot.countText) {
-                    slot.countText.destroy();
-                    slot.countText = undefined;
-                }
-                slot.itemId = undefined;
-                slot.itemType = undefined;
-
-                this.selectedMarketplaceSlot = -1;
-
-                // Create transaction details for display
-                this.createMarketplaceTransaction(slot.itemId || 'unknown', slot.itemType ?? 'item', result.transactionHash ?? '');
-
-                // Show transaction details modal automatically after successful purchase
-                if (this.currentTransaction && result.transactionHash) {
-                    this.time.delayedCall(1000, () => {
-                        this.showTransactionDetailsModal();
-                    });
-                }
-            } else {
-                this.showTransactionError(result.error || 'Purchase failed');
-            }
-        } catch (error) {
-            console.error('Purchase error:', error);
-            this.showTransactionError('Transaction failed');
-        } finally {
-            this.isProcessingTransaction = false;
-            this.hideTransactionProgress();
-        }
-    }
-
-    private createMarketplaceTransaction(itemId: string, itemType: string, realHash?: string): void {
-        // Use real blockchain transaction hash if provided, otherwise generate placeholder
-        const transactionHash = realHash || 'pending_' + Date.now();
-
-        // Generate blockchain details
-        const blockNumber = Math.floor(Math.random() * 100000) + 2000000;
-        const gasUsed = Math.floor(Math.random() * 30000) + 15000;
-        const gasPrice = '0.0001';
-        const gasCost = (gasUsed * parseFloat(gasPrice)).toFixed(6);
-
-        // Create marketplace transaction details object
-        this.currentTransaction = {
-            transactionHash,
-            blockNumber,
-            blockConfirmation: `${Math.floor(Math.random() * 10) + 1}/12`,
-            gasUsed,
-            gasPrice,
-            gasCost,
-            timestamp: Date.now(),
-            status: 'completed',
-            itemsTraded: {
-                playerItems: [
-                    {
-                        id: itemId,
-                        name: this.getItemDisplayName(itemId),
-                        quantity: 1,
-                        spriteKey: itemId
-                    }
-                ],
-                npcItems: [] // No NPC items in marketplace purchase
-            },
-            transactionType: 'marketplace_purchase',
-            price: this.getMarketplaceItemPrice(itemId, itemType).toString()
-        };
-
-        // Add the item to inventory after successful transaction
-        this.addMarketplaceItemToInventory(itemId, itemType);
-
-        // Show transaction completion notification
-        this.showMarketplaceTransactionCompleteNotification();
-    }
-
-    private getMarketplaceItemPrice(itemId: string, itemType: string): number {
-        // Generate realistic pricing based on item type
-        const basePrice = 100;
-        const itemMultiplier = {
-            'weapon': 2.5,
-            'armor': 2.0,
-            'consumable': 0.8,
-            'item': 1.0,
-            'misc': 1.2
-        };
-
-        const multiplier = itemMultiplier[itemType.toLowerCase() as keyof typeof itemMultiplier] || 1.0;
-        return Math.floor(basePrice * multiplier * (Math.random() * 0.5 + 0.75));
-    }
-
-    private addMarketplaceItemToInventory(itemId: string, itemType: string): void {
         // Try to add to existing stack in itembar
         for (let i = 0; i < this.SLOT_COUNT; i++) {
             const itembarSlot = this.slots[i];
-            if (itembarSlot.itemId === itemId) {
+            if (itembarSlot.itemId === slot.itemId) {
                 const currentCount = itembarSlot.countText ? parseInt(itembarSlot.countText.text) : 1;
                 if (currentCount < this.MAX_STACK_SIZE) {
-                    this.addItem(itemId, i, itemType, currentCount + 1);
+                    this.addItem(slot.itemId, i, slot.itemType, currentCount + 1);
                     return;
                 }
             }
@@ -2057,119 +1538,9 @@ export class UIScene extends Phaser.Scene {
         // Find first empty slot
         for (let i = 0; i < this.SLOT_COUNT; i++) {
             if (!this.slots[i].itemId) {
-                this.addItem(itemId, i, itemType, 1);
+                this.addItem(slot.itemId, i, slot.itemType, 1);
                 return;
             }
-        }
-    }
-
-    private showMarketplaceTransactionCompleteNotification(): void {
-        if (!this.currentTransaction) return;
-
-        const screenCenterX = this.cameras.main.width / 2;
-        const screenCenterY = this.cameras.main.height / 2;
-
-        // Create notification container
-        const notificationContainer = this.add.container(screenCenterX, screenCenterY);
-        notificationContainer.setScrollFactor(0);
-        notificationContainer.setDepth(30000);
-
-        // Semi-transparent overlay
-        const overlay = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.5);
-        overlay.setScrollFactor(0);
-        notificationContainer.add(overlay);
-
-        // Main notification background
-        const notificationBg = this.add.rectangle(0, 0, 450, 200, 0x1a1a1a);
-        notificationBg.setStrokeStyle(3, 0x3b82f6);
-        notificationContainer.add(notificationBg);
-
-        // Success icon and title
-        const successIcon = this.add.text(0, -60, '🛒', {
-            fontSize: '48px'
-        });
-        successIcon.setOrigin(0.5);
-        notificationContainer.add(successIcon);
-
-        const title = this.add.text(0, -20, 'Purchase Completed!', {
-            fontSize: '24px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        title.setOrigin(0.5);
-        notificationContainer.add(title);
-
-        const subtitle = this.add.text(0, 10, `Item purchased for ${this.currentTransaction.price || '0'} ◈`, {
-            fontSize: '14px',
-            color: '#9ca3af'
-        });
-        subtitle.setOrigin(0.5);
-        notificationContainer.add(subtitle);
-
-        // View transaction details button
-        const viewDetailsButtonBg = this.add.rectangle(0, 60, 200, 40, 0x3b82f6);
-        viewDetailsButtonBg.setStrokeStyle(2, 0x1d4ed8);
-        viewDetailsButtonBg.setInteractive({ useHandCursor: true });
-        notificationContainer.add(viewDetailsButtonBg);
-
-        const viewDetailsButtonText = this.add.text(0, 60, 'View Transaction Details', {
-            fontSize: '14px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        viewDetailsButtonText.setOrigin(0.5);
-        notificationContainer.add(viewDetailsButtonText);
-
-        // Button interactions
-        viewDetailsButtonBg.on('pointerdown', () => {
-            this.showTransactionDetailsModal();
-            this.hideMarketplaceTransactionNotification();
-        });
-
-        viewDetailsButtonBg.on('pointerover', () => {
-            viewDetailsButtonBg.setFillStyle(0x1d4ed8);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-
-        viewDetailsButtonBg.on('pointerout', () => {
-            viewDetailsButtonBg.setFillStyle(0x3b82f6);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-
-        // Close button
-        const closeButton = this.add.text(200, -80, '×', {
-            fontSize: '24px',
-            color: '#9ca3af'
-        });
-        closeButton.setOrigin(0.5);
-        closeButton.setInteractive({ useHandCursor: true });
-        notificationContainer.add(closeButton);
-
-        closeButton.on('pointerdown', () => {
-            this.hideMarketplaceTransactionNotification();
-        });
-
-        closeButton.on('pointerover', () => {
-            closeButton.setStyle({ color: '#ffffff' });
-        });
-
-        closeButton.on('pointerout', () => {
-            closeButton.setStyle({ color: '#9ca3af' });
-        });
-
-        // Store reference for cleanup
-        this.marketplaceTransactionNotificationContainer = notificationContainer;
-
-        // Auto-hide after 5 seconds
-        this.time.delayedCall(5000, () => {
-            this.hideMarketplaceTransactionNotification();
-        });
-    }
-
-    private hideMarketplaceTransactionNotification(): void {
-        if (this.marketplaceTransactionNotificationContainer) {
-            this.marketplaceTransactionNotificationContainer.destroy();
-            this.marketplaceTransactionNotificationContainer = undefined;
         }
     }
 
@@ -2219,696 +1590,6 @@ export class UIScene extends Phaser.Scene {
         return this.backpackVisible;
     }
 
-    // ===== TRANSACTION DETAILS METHODS =====
-
-    private createTransactionDetails(): void {
-        if (this.transactionDetailsCreated) return;
-        this.transactionDetailsCreated = true;
-
-        // Create transaction details container (centered on screen)
-        this.transactionDetailsContainer = this.add.container(0, 0);
-        this.transactionDetailsContainer.setScrollFactor(0);
-        this.transactionDetailsContainer.setDepth(20000); // Above marketplace
-        this.transactionDetailsContainer.setVisible(false);
-
-        // Add dark overlay with blur effect
-        const overlay = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            this.cameras.main.width * 2,
-            this.cameras.main.height * 2,
-            0x0a0a0a,
-            0.9
-        );
-        overlay.setOrigin(0.5);
-        overlay.setScrollFactor(0);
-        overlay.setDepth(50);
-        this.transactionDetailsContainer.add(overlay);
-
-        // Improved modal dimensions and spacing
-        const modalWidth = 650;
-        const modalHeight = 550;
-        const padding = 30;
-        const titleHeight = 55;
-        const closeButtonSize = 40;
-
-        // Create modal background with improved styling
-        const modalBg = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            modalWidth,
-            modalHeight,
-            0x1a1a2e,
-            0.98
-        );
-        modalBg.setStrokeStyle(3, 0x3a3a5c);
-        modalBg.setOrigin(0.5);
-        modalBg.setScrollFactor(0);
-        modalBg.setDepth(100);
-        this.transactionDetailsContainer.add(modalBg);
-
-        // Add subtle inner border for depth
-        const innerBorder = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            modalWidth - 8,
-            modalHeight - 8,
-            0x2a2a3e,
-            0.4
-        );
-        innerBorder.setStrokeStyle(1, 0x4a4a5c);
-        innerBorder.setOrigin(0.5);
-        innerBorder.setScrollFactor(0);
-        innerBorder.setDepth(101);
-        this.transactionDetailsContainer.add(innerBorder);
-
-        // Add decorative top border with gradient effect
-        const topBorder = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            modalWidth - 40,
-            4,
-            0x00d4ff
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
-        this.transactionDetailsContainer.add(topBorder);
-
-        // Create title background panel with relative positioning
-        const titlePanel = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            modalWidth - 60,
-            titleHeight,
-            0x2a2a4e,
-            0.95
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
-        titlePanel.setStrokeStyle(2, 0x444466);
-        this.transactionDetailsContainer.add(titlePanel);
-
-        // Title with improved typography and shadow
-        const title = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            '🔗 TRANSACTION DETAILS',
-            {
-                fontSize: '26px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#00d4ff',
-                fontStyle: 'bold',
-                shadow: {
-                    offsetX: 0,
-                    offsetY: 3,
-                    color: '#000000',
-                    blur: 6,
-                    stroke: true,
-                    fill: true
-                }
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsContainer.add(title);
-
-        // Close button with improved styling and relative positioning
-        const closeBtnX = this.cameras.main.centerX + (modalWidth/2) - padding - closeButtonSize/2;
-        const closeBtnY = this.cameras.main.centerY - (modalHeight/2) + titleHeight/2;
-
-        const closeBtnBg = this.add.circle(
-            closeBtnX,
-            closeBtnY,
-            closeButtonSize/2,
-            0xff4444,
-            0.9
-        ).setInteractive().setScrollFactor(0).setDepth(104);
-        closeBtnBg.setStrokeStyle(2, 0xcc0000);
-        this.transactionDetailsContainer.add(closeBtnBg);
-
-        const closeBtn = this.add.text(
-            closeBtnX,
-            closeBtnY,
-            '✕',
-            {
-                fontSize: '24px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#ffffff',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(105);
-        this.transactionDetailsContainer.add(closeBtn);
-
-        // Close button interactions with improved feedback
-        [closeBtnBg, closeBtn].forEach(element => {
-            element.on('pointerover', () => {
-                closeBtnBg.setFillStyle(0xff6666);
-                closeBtnBg.setScale(1.1);
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-
-            element.on('pointerout', () => {
-                closeBtnBg.setFillStyle(0xff4444);
-                closeBtnBg.setScale(1);
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-        });
-
-        closeBtnBg.on('pointerdown', () => {
-            this.hideTransactionDetails();
-        });
-        closeBtn.on('pointerdown', () => {
-            this.hideTransactionDetails();
-        });
-
-        // Store close button reference
-        this.transactionDetailsCloseButton = closeBtn;
-
-        // Create content sections with improved spacing and relative positioning
-        this.createImprovedTransactionContentPanels(modalWidth, modalHeight, padding, titleHeight);
-
-        // Add to HUD container
-        this.#hudContainer.add(this.transactionDetailsContainer);
-    }
-
-    private createImprovedTransactionContentPanels(modalWidth: number, modalHeight: number, padding: number, titleHeight: number): void {
-        // Content area calculations with relative positioning
-        const contentY = this.cameras.main.centerY - (modalHeight/2) + titleHeight + padding + 20;
-        const sectionHeight = 80;
-        const sectionGap = 15;
-        const labelHeight = 20;
-        const contentHeight = sectionHeight - labelHeight - 10;
-
-        // Transaction hash section with improved styling
-        const hashY = contentY + sectionHeight + sectionGap;
-        const hashPanel = this.add.rectangle(
-            this.cameras.main.centerX,
-            hashY,
-            modalWidth - padding * 2,
-            sectionHeight,
-            0x252547,
-            0.9
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(101);
-        hashPanel.setStrokeStyle(1, 0x404060);
-        this.transactionDetailsContainer.add(hashPanel);
-
-        const hashLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            hashY - (sectionHeight/2) + labelHeight/2,
-            '🔑 Transaction Hash:',
-            {
-                fontSize: '15px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#9ca3af',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0.5).setScrollFactor(0).setDepth(102);
-        this.transactionDetailsContainer.add(hashLabel);
-
-        // Status section with improved styling
-        const statusY = hashY + sectionHeight + sectionGap;
-        const statusPanel = this.add.rectangle(
-            this.cameras.main.centerX,
-            statusY,
-            modalWidth - padding * 2,
-            sectionHeight - 10,
-            0x252547,
-            0.9
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(101);
-        statusPanel.setStrokeStyle(1, 0x404060);
-        this.transactionDetailsContainer.add(statusPanel);
-
-        const statusLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            statusY - (sectionHeight/2 - 5) + labelHeight/2,
-            '⚡ Status:',
-            {
-                fontSize: '15px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#9ca3af',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0.5).setScrollFactor(0).setDepth(102);
-        this.transactionDetailsContainer.add(statusLabel);
-
-        // Explorer button section with improved styling
-        const explorerY = statusY + (sectionHeight - 10) + sectionGap;
-        const explorerPanel = this.add.rectangle(
-            this.cameras.main.centerX,
-            explorerY,
-            modalWidth - padding * 2,
-            sectionHeight + 20,
-            0x1a2a1a,
-            0.9
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(101);
-        explorerPanel.setStrokeStyle(1, 0x303040);
-        this.transactionDetailsContainer.add(explorerPanel);
-
-        const explorerLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            explorerY - (sectionHeight/2 + 10) + labelHeight/2,
-            '🌐 External Link:',
-            {
-                fontSize: '15px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#9ca3af',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0.5).setScrollFactor(0).setDepth(102);
-        this.transactionDetailsContainer.add(explorerLabel);
-
-        // Create explorer button with improved styling
-        const explorerButton = this.add.rectangle(
-            this.cameras.main.centerX,
-            explorerY + 15,
-            220,
-            48,
-            0x00d4ff,
-            0.9
-        ).setStrokeStyle(2, 0x0099cc).setInteractive({ useHandCursor: true }).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsContainer.add(explorerButton);
-
-        const explorerButtonText = this.add.text(
-            this.cameras.main.centerX,
-            explorerY + 15,
-            '🔍 View on Explorer',
-            {
-                fontSize: '17px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#ffffff',
-                fontStyle: 'bold',
-                shadow: {
-                    offsetX: 0,
-                    offsetY: 1,
-                    color: '#000000',
-                    blur: 2,
-                    stroke: true,
-                    fill: true
-                }
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(104);
-        this.transactionDetailsContainer.add(explorerButtonText);
-
-        // Explorer button interactions with improved feedback
-        explorerButton.on('pointerdown', () => {
-            if (this.currentTransaction && this.currentTransaction.transactionHash) {
-                const url = `https://onescan.cc/testnet/transactionBlocksDetail?digest=${this.currentTransaction.transactionHash}`;
-                console.log('Opening transaction URL:', url);
-                window.open(url, '_blank');
-            }
-        });
-
-        explorerButton.on('pointerover', () => {
-            explorerButton.setFillStyle(0x00ffff);
-            explorerButtonText.setColor('#000000');
-            explorerButton.setScale(1.02);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-
-        explorerButton.on('pointerout', () => {
-            explorerButton.setFillStyle(0x00d4ff);
-            explorerButtonText.setColor('#ffffff');
-            explorerButton.setScale(1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-    }
-
-    private createTransactionDetailsCloseButton(): void {
-        // Create modern close button
-        const closeButtonBg = this.add.circle(
-            this.cameras.main.centerX + 270,
-            this.cameras.main.centerY - 200,
-            18,
-            0xff4444
-        ).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(104);
-        this.transactionDetailsContainer.add(closeButtonBg);
-
-        const closeButton = this.add.text(
-            this.cameras.main.centerX + 270,
-            this.cameras.main.centerY - 200,
-            '✕',
-            {
-                fontSize: '20px',
-                fontFamily: 'Arial',
-                color: '#ffffff',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(105);
-        this.transactionDetailsContainer.add(closeButton);
-
-        // Button interactions with modern effects
-        closeButtonBg.on('pointerdown', () => {
-            this.hideTransactionDetails();
-        });
-
-        closeButton.on('pointerdown', () => {
-            this.hideTransactionDetails();
-        });
-
-        [closeButtonBg, closeButton].forEach(element => {
-            element.on('pointerover', () => {
-                closeButtonBg.setFillStyle(0xff6666);
-                closeButton.setColor('#ffffff');
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-
-            element.on('pointerout', () => {
-                closeButtonBg.setFillStyle(0xff4444);
-                closeButton.setColor('#ffffff');
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-        });
-
-        this.transactionDetailsCloseButton = closeButton;
-    }
-
-    private updateTransactionDetailsContent(): void {
-        if (!this.currentTransaction) return;
-
-        // Clear existing text objects
-        this.transactionDetailsTexts.forEach(text => text.destroy());
-        this.transactionDetailsTexts = [];
-
-        // Determine transaction type and set title
-        const isMintingTransaction = this.currentTransaction.transactionType === 'mint';
-        const isMarketplaceTransaction = this.currentTransaction.transactionType === 'marketplace_purchase';
-        const isNPCTransaction = this.currentTransaction.itemsTraded?.npcItems?.length > 0 && !isMintingTransaction;
-
-        const transactionTitle = isMintingTransaction ? '🥕 MINTING COMPLETED' :
-                               isMarketplaceTransaction ? '🛒 MARKETPLACE PURCHASE' :
-                               isNPCTransaction ? '🤝 NPC TRADE COMPLETED' : '🔗 TRANSACTION DETAILS';
-
-        // Modal dimensions for relative positioning
-        const modalWidth = 650;
-        const modalHeight = 550;
-        const padding = 30;
-        const titleHeight = 55;
-
-        // Update title with improved positioning
-        const titleText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
-            transactionTitle,
-            {
-                fontSize: '26px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#00d4ff',
-                fontStyle: 'bold',
-                shadow: {
-                    offsetX: 0,
-                    offsetY: 3,
-                    color: '#000000',
-                    blur: 6,
-                    stroke: true,
-                    fill: true
-                }
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsTexts.push(titleText);
-        this.transactionDetailsContainer.add(titleText);
-
-        // Content area calculations with proper spacing
-        const contentStartY = this.cameras.main.centerY - (modalHeight/2) + titleHeight + padding;
-        let nextY = contentStartY;
-
-        // Add minting-specific content
-        if (isMintingTransaction) {
-            // Minted items display with large carrot icon
-            const mintedItems = this.currentTransaction.itemsTraded?.npcItems || [];
-            const totalMinted = mintedItems.reduce((sum, item) => sum + item.quantity, 0);
-
-            // Minted items icon
-            const mintIcon = this.add.text(
-                this.cameras.main.centerX,
-                nextY + 40,
-                '🥕',
-                {
-                    fontSize: '48px',
-                    fontFamily: 'Arial, sans-serif'
-                }
-            ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-            this.transactionDetailsTexts.push(mintIcon);
-            this.transactionDetailsContainer.add(mintIcon);
-
-            // Minted count text
-            const mintedText = this.add.text(
-                this.cameras.main.centerX,
-                nextY + 80,
-                `${totalMinted} Carrot NFT${totalMinted > 1 ? 's' : ''} Minted!`,
-                {
-                    fontSize: '24px',
-                    fontFamily: 'Arial, sans-serif',
-                    color: '#2ecc71',
-                    fontStyle: 'bold',
-                    shadow: {
-                        offsetX: 0,
-                        offsetY: 2,
-                        color: '#000000',
-                        blur: 4,
-                        stroke: true,
-                        fill: true
-                    }
-                }
-            ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
-            this.transactionDetailsTexts.push(mintedText);
-            this.transactionDetailsContainer.add(mintedText);
-            nextY += 120;
-        }
-
-        // Transaction details section
-        const detailsLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
-            nextY + 20,
-            '📋 Transaction Details',
-            {
-                fontSize: '16px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#00d4ff',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsTexts.push(detailsLabel);
-        this.transactionDetailsContainer.add(detailsLabel);
-        nextY += 50;
-
-        // Transaction hash display
-        const hashText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
-            nextY + 20,
-            'Hash:',
-            {
-                fontSize: '13px',
-                fontFamily: 'Arial, sans-serif',
-                color: '#95a5a6',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsTexts.push(hashText);
-        this.transactionDetailsContainer.add(hashText);
-
-        const hashValueText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
-            nextY + 45,
-            this.currentTransaction.transactionHash || 'No hash available',
-            {
-                fontSize: '13px',
-                fontFamily: 'monospace',
-                color: '#ffffff',
-                wordWrap: { width: modalWidth - padding * 3 - 150 },
-                lineSpacing: 2
-            }
-        ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsTexts.push(hashValueText);
-        this.transactionDetailsContainer.add(hashValueText);
-        nextY += 80;
-
-        // Status display
-        const statusText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
-            nextY,
-            `Status: ${this.currentTransaction.status?.toUpperCase() || 'UNKNOWN'}`,
-            {
-                fontSize: '14px',
-                fontFamily: 'Arial, sans-serif',
-                color: this.getStatusColor(this.currentTransaction.status),
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-        this.transactionDetailsTexts.push(statusText);
-        this.transactionDetailsContainer.add(statusText);
-        nextY += 25;
-
-        // Additional details with improved spacing
-
-        // Price information (for marketplace transactions)
-        if (this.currentTransaction.price && isMarketplaceTransaction) {
-            const priceText = this.add.text(
-                this.cameras.main.centerX - (modalWidth/2) + padding,
-                nextY,
-                `💰 Price: ${this.currentTransaction.price} ◈`,
-                {
-                    fontSize: '14px',
-                    fontFamily: 'Arial, sans-serif',
-                    color: '#ffd700',
-                    fontStyle: 'bold'
-                }
-            ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-            this.transactionDetailsTexts.push(priceText);
-            this.transactionDetailsContainer.add(priceText);
-            nextY += 25;
-        }
-
-        // Gas information
-        if (this.currentTransaction.gasUsed) {
-            const gasText = this.add.text(
-                this.cameras.main.centerX - (modalWidth/2) + padding,
-                nextY,
-                `⛽ Gas Used: ${this.currentTransaction.gasUsed.toLocaleString()} | Cost: ${this.currentTransaction.gasCost || '0.0025'} SUI`,
-                {
-                    fontSize: '13px',
-                    fontFamily: 'Arial, sans-serif',
-                    color: '#9ca3af'
-                }
-            ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-            this.transactionDetailsTexts.push(gasText);
-            this.transactionDetailsContainer.add(gasText);
-            nextY += 25;
-        }
-
-        // Items traded information (skip for minting transactions as they're handled above)
-        if (this.currentTransaction.itemsTraded && !isMintingTransaction) {
-            const items = this.currentTransaction.itemsTraded;
-
-            if (items.playerItems?.length > 0) {
-                const playerItemsText = this.add.text(
-                    this.cameras.main.centerX - (modalWidth/2) + padding,
-                    nextY,
-                    `✅ Received: ${items.playerItems.map((item: any) => `${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ''}`).join(', ')}`,
-                    {
-                        fontSize: '13px',
-                        fontFamily: 'Arial, sans-serif',
-                        color: '#10b981',
-                        fontStyle: 'bold',
-                        wordWrap: { width: modalWidth - padding * 2 }
-                    }
-                ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-                this.transactionDetailsTexts.push(playerItemsText);
-                this.transactionDetailsContainer.add(playerItemsText);
-                nextY += 22;
-            }
-
-            if (items.npcItems?.length > 0) {
-                const npcItemsText = this.add.text(
-                    this.cameras.main.centerX - (modalWidth/2) + padding,
-                    nextY,
-                    `🔄 Traded: ${items.npcItems.map((item: any) => `${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ''}`).join(', ')}`,
-                    {
-                        fontSize: '13px',
-                        fontFamily: 'Arial, sans-serif',
-                        color: '#f59e0b',
-                        fontStyle: 'bold',
-                        wordWrap: { width: modalWidth - padding * 2 }
-                    }
-                ).setOrigin(0, 0).setScrollFactor(0).setDepth(103);
-                this.transactionDetailsTexts.push(npcItemsText);
-                this.transactionDetailsContainer.add(npcItemsText);
-            }
-        }
-
-        // Test button with improved styling (only for mock transactions)
-        if (!this.currentTransaction.transactionHash || this.currentTransaction.transactionHash.startsWith('0x')) {
-            const testButton = this.add.rectangle(
-                this.cameras.main.centerX,
-                this.cameras.main.centerY + (modalHeight/2) - padding - 25,
-                200,
-                40,
-                0x444444,
-                0.9
-            ).setStrokeStyle(1, 0x666666).setInteractive().setOrigin(0.5).setScrollFactor(0).setDepth(103);
-            this.transactionDetailsContainer.add(testButton);
-
-            const testButtonText = this.add.text(
-                this.cameras.main.centerX,
-                this.cameras.main.centerY + (modalHeight/2) - padding - 25,
-                '🔍 VIEW ON BLOCKCHAIN',
-                {
-                    fontSize: '14px',
-                    fontFamily: 'Arial, sans-serif',
-                    color: '#ffaa00',
-                    fontStyle: 'bold'
-                }
-            ).setOrigin(0.5).setScrollFactor(0).setDepth(104);
-            this.transactionDetailsContainer.add(testButtonText);
-
-            testButton.on('pointerdown', () => {
-                // Use real transaction hash if available, otherwise use test URL
-                const txHash = this.currentTransaction?.transactionHash;
-                if (txHash && txHash !== 'pending_' + Date.now() && !txHash.startsWith('escrow_')) {
-                    // Real blockchain transaction - open in blockchain explorer
-                    const explorerUrl = `https://onescan.cc/testnet/transactionBlocksDetail?digest=${txHash}`;
-                    console.log('Opening blockchain explorer:', explorerUrl);
-                    window.open(explorerUrl, '_blank');
-                } else {
-                    // Test or simulated transaction - use test URL
-                    const testUrl = 'https://onescan.cc/testnet/transactionBlocksDetail?digest=SVCtuZctTDzSKU2Q2LTVKjQ9avcMSNE8x1paJkYmeff';
-                    console.log('Opening test transaction URL:', testUrl);
-                    window.open(testUrl, '_blank');
-                }
-            });
-
-            testButton.on('pointerover', () => {
-                testButton.setFillStyle(0x555555);
-                testButtonText.setColor('#ffff00');
-                testButton.setScale(1.02);
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-
-            testButton.on('pointerout', () => {
-                testButton.setFillStyle(0x444444);
-                testButtonText.setColor('#ffaa00');
-                testButton.setScale(1);
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-
-            this.transactionDetailsTexts.push(testButton as any);
-            this.transactionDetailsTexts.push(testButtonText as any);
-        }
-    }
-
-    private getStatusColor(status?: string): string {
-        switch (status?.toLowerCase()) {
-            case 'completed': return '#10b981';
-            case 'pending': return '#f59e0b';
-            case 'failed': return '#ef4444';
-            default: return '#9ca3af';
-        }
-    }
-
-    public showTransactionDetails(transaction: any): void {
-        if (!this.transactionDetailsCreated) {
-            this.createTransactionDetails();
-        }
-
-        this.currentTransaction = transaction;
-        this.transactionDetailsVisible = true;
-        this.transactionDetailsContainer.setVisible(true);
-        this.updateTransactionDetailsContent();
-
-        // Disable player movement
-        const farmScene = this.scene.get(SCENE_KEYS.FARM) as any;
-        if (farmScene && farmScene.player) {
-            farmScene.player.setVelocity(0, 0);
-        }
-    }
-
-    public hideTransactionDetails(): void {
-        this.transactionDetailsVisible = false;
-        this.transactionDetailsContainer.setVisible(false);
-        this.currentTransaction = null;
-
-        // Clear text objects
-        this.transactionDetailsTexts.forEach(text => text.destroy());
-        this.transactionDetailsTexts = [];
-    }
-
-    public isTransactionDetailsOpen(): boolean {
-        return this.transactionDetailsVisible;
-    }
-
     public toggleMarketplace(): void {
         if (this.marketplaceVisible) {
             this.hideMarketplace();
@@ -2917,447 +1598,26 @@ export class UIScene extends Phaser.Scene {
         }
     }
 
-    // ===== ONECHAIN BLOCKCHAIN HELPER METHODS =====
-
-    private showMarketplaceError(message: string): void {
-        const errorText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            message,
-            {
-                fontSize: '16px',
-                color: '#ef4444',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        );
-        errorText.setOrigin(0.5);
-        errorText.setScrollFactor(0);
-        errorText.setDepth(300);
-        this.marketplaceContainer.add(errorText);
-
-        // Auto-hide after 3 seconds
-        this.time.delayedCall(3000, () => {
-            errorText.destroy();
-        });
-    }
-
-    private addKioskItemToSlot(item: any, index: number): void {
-        const slotSize = 48;
-        const spacing = 8;
-        const cols = 5;
-        const row = Math.floor(index / cols);
-        const col = index % cols;
-
-        const x = 113 + col * (slotSize + spacing);
-        const y = 33 + row * (slotSize + spacing);
-
-        // Create slot background
-        const slotBg = this.add.image(x, y, 'slot');
-        slotBg.setScrollFactor(0);
-        slotBg.setDepth(200);
-        this.marketplaceContainer.add(slotBg);
-
-        // Create item image
-        const itemImage = this.add.image(x, y, item.item.sprite_key || 'potion_01a');
-        itemImage.setScrollFactor(0);
-        itemImage.setDepth(250);
-        itemImage.setInteractive({ useHandCursor: true });
-        this.marketplaceContainer.add(itemImage);
-
-        // Add rarity border effect
-        const rarityColor = getRarityColor(item.item.rarity);
-        const rarityBorder = this.add.rectangle(x, y, slotSize + 4, slotSize + 4, 0x000000, 0);
-        rarityBorder.setStrokeStyle(2, parseInt(rarityColor.replace('#', '0x')));
-        rarityBorder.setScrollFactor(0);
-        rarityBorder.setDepth(249);
-        this.marketplaceContainer.add(rarityBorder);
-
-        // Add price text
-        const priceText = this.add.text(x, y + slotSize/2 + 10, `${item.price.toLocaleString()} ◈`, {
-            fontSize: '10px',
-            color: '#10b981',
-            align: 'center'
-        });
-        priceText.setOrigin(0.5);
-        priceText.setScrollFactor(0);
-        priceText.setDepth(260);
-        this.marketplaceContainer.add(priceText);
-
-        // Click handler for managing listing
-        itemImage.on('pointerdown', () => {
-            this.showKioskItemOptions(item);
-        });
-
-        // Hover effects
-        itemImage.on('pointerover', () => {
-            itemImage.setScale(1.1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        itemImage.on('pointerout', () => {
-            itemImage.setScale(1.0);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-
-        // Store slot
-        this.marketplaceSlots.push({
-            bg: slotBg,
-            x, y,
-            itemId: item.id,
-            itemImage,
-            countText: priceText,
-            itemType: 'kiosk_item'
-        });
-    }
-
-    private showKioskItemOptions(item: any): void {
-        // Create options modal
-        const modal = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
-        modal.setScrollFactor(0);
-        modal.setDepth(30000);
-
-        const bg = this.add.rectangle(0, 0, 300, 200, 0x1a1a1a);
-        bg.setStrokeStyle(3, 0x4a4a4a);
-        modal.add(bg);
-
-        const title = this.add.text(0, -70, 'Manage Listing', {
-            fontSize: '18px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        title.setOrigin(0.5);
-        modal.add(title);
-
-        // Cancel listing button
-        const cancelBtn = this.add.rectangle(-60, 20, 100, 40, 0xef4444);
-        cancelBtn.setInteractive({ useHandCursor: true });
-        modal.add(cancelBtn);
-
-        const cancelText = this.add.text(-60, 20, 'Cancel', {
-            fontSize: '14px',
-            color: '#ffffff'
-        });
-        cancelText.setOrigin(0.5);
-        modal.add(cancelText);
-
-        // Edit price button
-        const editBtn = this.add.rectangle(60, 20, 100, 40, 0x3b82f6);
-        editBtn.setInteractive({ useHandCursor: true });
-        modal.add(editBtn);
-
-        const editText = this.add.text(60, 20, 'Edit Price', {
-            fontSize: '14px',
-            color: '#ffffff'
-        });
-        editText.setOrigin(0.5);
-        modal.add(editText);
-
-        // Close button
-        const closeBtn = this.add.text(130, -70, '✕', {
-            fontSize: '20px',
-            color: '#ef4444'
-        });
-        closeBtn.setOrigin(0.5);
-        closeBtn.setInteractive({ useHandCursor: true });
-        modal.add(closeBtn);
-
-        // Event handlers
-        cancelBtn.on('pointerdown', async () => {
-            await this.cancelKioskListing(item);
-            modal.destroy();
-        });
-
-        editBtn.on('pointerdown', () => {
-            this.showEditPriceDialog(item);
-            modal.destroy();
-        });
-
-        closeBtn.on('pointerdown', () => {
-            modal.destroy();
-        });
-
-        // Hover effects
-        [cancelBtn, editBtn, closeBtn].forEach(btn => {
-            btn.on('pointerover', () => {
-                btn.setScale(1.05);
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-            btn.on('pointerout', () => {
-                btn.setScale(1.0);
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-        });
-
-        this.marketplaceContainer.add(modal);
-    }
-
-    private async cancelKioskListing(item: any): Promise<void> {
-        if (this.isProcessingTransaction) return;
-
-        try {
-            this.isProcessingTransaction = true;
-            this.showTransactionProgress('Cancelling listing...');
-
-            // Execute blockchain transaction
-            const result = await this.oneChainMarketplaceService.cancelListing(item.id);
-
-            if (result.success) {
-                this.showTransactionSuccess('Listing cancelled successfully!');
-
-                // Create transaction record for cancelled listing
-                this.currentTransaction = {
-                    transactionHash: result.transactionHash || 'cancel_' + Date.now(),
-                    blockNumber: Math.floor(Math.random() * 100000) + 2000000,
-                    blockConfirmation: '12/12',
-                    gasUsed: Math.floor(Math.random() * 30000) + 15000,
-                    gasPrice: '0.0001',
-                    gasCost: '0.0015',
-                    timestamp: Date.now(),
-                    status: 'completed',
-                    itemsTraded: {
-                        playerItems: [],
-                        npcItems: []
-                    },
-                    transactionType: 'CANCEL_LISTING',
-                    price: undefined,
-                    nftTransfers: []
-                };
-
-                // Show transaction details modal for listing cancellation
-                this.time.delayedCall(1000, () => {
-                    this.showTransactionDetailsModal();
-                });
-
-                this.loadPlayerKiosk(); // Refresh kiosk
-            } else {
-                this.showTransactionError(result.error || 'Failed to cancel listing');
-            }
-        } catch (error) {
-            console.error('Cancel listing error:', error);
-            this.showTransactionError('Transaction failed');
-        } finally {
-            this.isProcessingTransaction = false;
-            this.hideTransactionProgress();
-        }
-    }
-
-    private showEditPriceDialog(item: any): void {
-        // Simple price edit dialog
-        const modal = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
-        modal.setScrollFactor(0);
-        modal.setDepth(30000);
-
-        const bg = this.add.rectangle(0, 0, 300, 150, 0x1a1a1a);
-        bg.setStrokeStyle(3, 0x4a4a4a);
-        modal.add(bg);
-
-        const title = this.add.text(0, -40, 'Edit Price', {
-            fontSize: '16px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        title.setOrigin(0.5);
-        modal.add(title);
-
-        // Input field simulation (just show current price)
-        const currentPrice = this.add.text(0, 0, `Current: ${item.price.toLocaleString()} ◈`, {
-            fontSize: '14px',
-            color: '#10b981'
-        });
-        currentPrice.setOrigin(0.5);
-        modal.add(currentPrice);
-
-        // Close button
-        const closeBtn = this.add.text(120, -40, '✕', {
-            fontSize: '18px',
-            color: '#ef4444'
-        });
-        closeBtn.setOrigin(0.5);
-        closeBtn.setInteractive({ useHandCursor: true });
-        modal.add(closeBtn);
-
-        closeBtn.on('pointerdown', () => {
-            modal.destroy();
-        });
-
-        this.marketplaceContainer.add(modal);
-    }
-
-    private showTransactionProgress(message: string): void {
-        // Show progress indicator (simplified)
-        const progressText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 100,
-            message,
-            {
-                fontSize: '16px',
-                color: '#3b82f6',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        );
-        progressText.setOrigin(0.5);
-        progressText.setScrollFactor(0);
-        progressText.setDepth(31000);
-        this.#hudContainer.add(progressText);
-        this.#hudContainer.setData('transactionProgress', progressText);
-    }
-
-    private hideTransactionProgress(): void {
-        const progressText = this.#hudContainer.getData('transactionProgress');
-        if (progressText) {
-            progressText.destroy();
-            // Remove data entry by setting it to undefined
-            this.#hudContainer.setData('transactionProgress', undefined);
-        }
-    }
-
-    private showTransactionSuccess(message: string): void {
-        const successText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            `✅ ${message}`,
-            {
-                fontSize: '18px',
-                color: '#10b981',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        );
-        successText.setOrigin(0.5);
-        successText.setScrollFactor(0);
-        successText.setDepth(31000);
-        this.#hudContainer.add(successText);
-
-        // Auto-hide after 3 seconds
-        this.time.delayedCall(3000, () => {
-            successText.destroy();
-        });
-    }
-
-    private showTransactionError(message: string): void {
-        const errorText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            `❌ ${message}`,
-            {
-                fontSize: '16px',
-                color: '#ef4444',
-                align: 'center',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        );
-        errorText.setOrigin(0.5);
-        errorText.setScrollFactor(0);
-        errorText.setDepth(31000);
-        this.#hudContainer.add(errorText);
-
-        // Auto-hide after 3 seconds
-        this.time.delayedCall(3000, () => {
-            errorText.destroy();
-        });
-    }
-
     // ===== NPC TRADE INVENTORY METHODS =====
 
     public showNPCTrade(): void {
         if (!this.npcTradeContainer) {
             this.createNPCTrade();
         }
-
+        
         this.npcTradeVisible = true;
         this.npcTradeLocked = false;
         this.npcTradeContainer.setVisible(true);
         this.npcTradeOverlay.setVisible(true);
-
+        
         // Hide marketplace if open
         if (this.marketplaceVisible) {
             this.hideMarketplace();
         }
-
+        
         // Auto-open backpack in the middle
         if (!this.backpackVisible) {
             this.showBackpack();
-        }
-
-        // Automatically add Herman's items to his trading slots
-        this.populateHermanTradingSlots();
-    }
-
-    private populateHermanTradingSlots(): void {
-        // Clear any existing items in Herman's slots first
-        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
-            this.clearNPCSlot(i, 'right');
-        }
-
-        // Select 2-4 random items from Herman's inventory for trading
-        const itemsToAdd = this.getRandomHermanItems();
-
-        // Add items to Herman's trading slots (right side)
-        itemsToAdd.forEach((itemId, index) => {
-            if (index < this.NPC_TRADE_SLOTS_PER_SIDE) {
-                // Add a small delay for visual appeal
-                this.time.delayedCall(200 * (index + 1), () => {
-                    this.addItemToNPCSlot(itemId, index, 'right', this.getItemType(itemId), 1);
-                });
-            }
-        });
-    }
-
-    private getRandomHermanItems(): string[] {
-        if (this.npcHermanItems.length === 0) {
-            // Fallback items if Herman's inventory is empty
-            return ['potion_01a', 'fish_01a', 'candy_01a'];
-        }
-
-        // Shuffle Herman's items and take 2-4 random items
-        const shuffled = [...this.npcHermanItems].sort(() => Math.random() - 0.5);
-        const itemCount = Math.floor(Math.random() * 3) + 2; // 2-4 items
-        return shuffled.slice(0, itemCount);
-    }
-
-    private getItemType(itemId: string): string {
-        // Determine item type based on sprite key
-        if (itemId.includes('sword') || itemId.includes('bow') || itemId.includes('staff')) {
-            return 'weapon';
-        } else if (itemId.includes('helmet') || itemId.includes('armor')) {
-            return 'armor';
-        } else if (itemId.includes('potion') || itemId.includes('fish') || itemId.includes('candy')) {
-            return 'consumable';
-        } else {
-            return 'misc';
-        }
-    }
-
-    private buildMintMetadata(itemId: string): GameItem {
-        const displayName = this.getItemDisplayName(itemId);
-        const itemType = this.getItemType(itemId);
-        const rarity = itemType === 'weapon' ? 3 : itemType === 'armor' ? 2 : 1;
-
-        return {
-            id: itemId,
-            name: displayName,
-            description: `${displayName} prepared for OneChain escrow trade`,
-            type: itemType,
-            rarity,
-            stats: this.generateDefaultStatsForType(itemType)
-        };
-    }
-
-    private generateDefaultStatsForType(itemType: string): number[] {
-        switch (itemType) {
-            case 'weapon':
-                return [25, 10, 5];
-            case 'armor':
-                return [10, 25, 8];
-            case 'consumable':
-                return [5, 5, 15];
-            default:
-                return [8, 8, 8];
         }
     }
 
@@ -4034,79 +2294,6 @@ export class UIScene extends Phaser.Scene {
         // Hide confirmation modal
         this.hideTradeConfirmationModal();
 
-        // Collect item data for transaction details
-        const playerItems: Array<{ id: string; name: string; quantity: number; spriteKey: string }> = [];
-        const npcItems: Array<{ id: string; name: string; quantity: number; spriteKey: string }> = [];
-
-        // Collect player items from left slots
-        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
-            const leftSlot = this.npcLeftSlots[i];
-            if (leftSlot && leftSlot.itemId) {
-                const count = leftSlot.countText ? parseInt(leftSlot.countText.text) : 1;
-                playerItems.push({
-                    id: leftSlot.itemId,
-                    name: this.getItemDisplayName(leftSlot.itemId),
-                    quantity: count,
-                    spriteKey: leftSlot.itemId
-                });
-            }
-        }
-
-        // Collect NPC items from right slots
-        for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
-            const rightSlot = this.npcRightSlots[i];
-            if (rightSlot && rightSlot.itemId) {
-                const count = rightSlot.countText ? parseInt(rightSlot.countText.text) : 1;
-                npcItems.push({
-                    id: rightSlot.itemId,
-                    name: this.getItemDisplayName(rightSlot.itemId),
-                    quantity: count,
-                    spriteKey: rightSlot.itemId
-                });
-            }
-        }
-
-        // Generate mock blockchain transaction details
-        const transactionHash = `0x${Math.random().toString(16).substr(2, 64)}`;
-        const blockNumber = Math.floor(Math.random() * 1000000) + 10000000;
-        const gasUsed = Math.floor(Math.random() * 50000) + 20000;
-        const gasPrice = '0.0001';
-        const gasCost = (gasUsed * parseFloat(gasPrice)).toFixed(6);
-
-        // Create transaction details object
-        this.currentTransaction = {
-            transactionHash,
-            blockNumber,
-            blockConfirmation: `${Math.floor(Math.random() * 10) + 1}/12`,
-            gasUsed,
-            gasPrice,
-            gasCost,
-            timestamp: Date.now(),
-            status: 'completed',
-            itemsTraded: {
-                playerItems,
-                npcItems
-            },
-            nftTransfers: playerItems.concat(npcItems).map((item, index) => ({
-                from: index < playerItems.length ? '0xplayer...' : '0xherman...',
-                to: index < playerItems.length ? '0xherman...' : '0xplayer...',
-                tokenId: `token_${item.id}_${Math.random().toString(16).substr(2, 8)}`,
-                contractAddress: '0x1234567890abcdef1234567890abcdef12345678'
-            })),
-            escrowEvents: [
-                ...playerItems.map(item => ({
-                    type: 'locked' as const,
-                    itemId: item.id,
-                    timestamp: Date.now() - 5000
-                })),
-                ...npcItems.map(item => ({
-                    type: 'unlocked' as const,
-                    itemId: item.id,
-                    timestamp: Date.now() - 1000
-                }))
-            ]
-        };
-
         // Transfer items: remove from left slots, add right slots items to backpack
         for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
             const rightSlot = this.npcRightSlots[i];
@@ -4114,7 +2301,7 @@ export class UIScene extends Phaser.Scene {
                 const itemId = rightSlot.itemId;
                 const itemType = rightSlot.itemType || 'item';
                 const count = rightSlot.countText ? parseInt(rightSlot.countText.text) : 1;
-
+                
                 // Find first empty slot in backpack
                 for (let backpackIndex = 0; backpackIndex < this.BACKPACK_SLOT_COUNT; backpackIndex++) {
                     const backpackSlot = this.backpackSlots[backpackIndex];
@@ -4134,7 +2321,7 @@ export class UIScene extends Phaser.Scene {
 
         // Reset trade state
         this.npcTradeLocked = false;
-
+        
         if (this.npcPlayerTick) {
             this.npcPlayerTick.setVisible(false);
         }
@@ -4145,168 +2332,8 @@ export class UIScene extends Phaser.Scene {
             this.npcAcceptButton.setText('Accept');
         }
 
-        // Show transaction completion notification with details button
-        this.showTransactionCompleteNotification();
-
-        // Emit transaction completed event for React components
-        EventBus.emit('npc-trade-completed', this.currentTransaction);
-
         // Close the trade UI immediately
         this.hideNPCTrade();
-    }
-
-    private getItemDisplayName(itemId: string): string {
-        // Convert item IDs to human-readable names
-        const itemNames: Record<string, string> = {
-            'potion_01a': 'Health Potion',
-            'fish_01a': 'Fresh Fish',
-            'candy_01a': 'Magic Candy',
-            'helmet_01a': 'Iron Helmet',
-            'sword_01a': 'Iron Sword',
-            'sword_01b': 'Bronze Sword',
-            'sword_01c': 'Steel Sword',
-            'sword_01d': 'Silver Sword',
-            'sword_01e': 'Golden Sword',
-            'bow_01a': 'Wooden Bow',
-            'bow_01b': 'Hunting Bow',
-            'staff_01a': 'Magic Staff',
-            'spellbook_01a': 'Spellbook',
-            'shield_01a': 'Wooden Shield',
-            'shield_01b': 'Iron Shield',
-            'crystal_01a': 'Magic Crystal',
-            'gem_01a': 'Precious Gem',
-            'ring_01a': 'Magic Ring',
-            'necklace_01a': 'Amulet',
-            'key_01a': 'Ancient Key',
-            'scroll_01a': 'Magic Scroll',
-            'coin_01a': 'Gold Coin',
-            'ingot_01a': 'Iron Ingot',
-            'book_01a': 'Ancient Tome',
-            'gift_01a': 'Mystery Box',
-            'pearl_01a': 'Magic Pearl',
-            'arrow_01a': 'Arrow'
-        };
-
-        return itemNames[itemId] || itemId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    }
-
-    private showTransactionCompleteNotification(): void {
-        if (!this.currentTransaction) return;
-
-        const screenCenterX = this.cameras.main.width / 2;
-        const screenCenterY = this.cameras.main.height / 2;
-
-        // Create notification container
-        const notificationContainer = this.add.container(screenCenterX, screenCenterY);
-        notificationContainer.setScrollFactor(0);
-        notificationContainer.setDepth(30000);
-
-        // Semi-transparent overlay
-        const overlay = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.5);
-        overlay.setScrollFactor(0);
-        notificationContainer.add(overlay);
-
-        // Main notification background
-        const notificationBg = this.add.rectangle(0, 0, 450, 200, 0x1a1a1a);
-        notificationBg.setStrokeStyle(3, 0x10b981);
-        notificationContainer.add(notificationBg);
-
-        // Success icon and title
-        const successIcon = this.add.text(0, -60, '✅', {
-            fontSize: '48px'
-        });
-        successIcon.setOrigin(0.5);
-        notificationContainer.add(successIcon);
-
-        const title = this.add.text(0, -20, 'Trade Completed!', {
-            fontSize: '24px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        title.setOrigin(0.5);
-        notificationContainer.add(title);
-
-        const subtitle = this.add.text(0, 10, 'Your items have been exchanged successfully', {
-            fontSize: '14px',
-            color: '#9ca3af'
-        });
-        subtitle.setOrigin(0.5);
-        notificationContainer.add(subtitle);
-
-        // View transaction details button
-        this.transactionDetailsButtonBg = this.add.rectangle(0, 60, 200, 40, 0x10b981);
-        this.transactionDetailsButtonBg.setStrokeStyle(2, 0x059669);
-        this.transactionDetailsButtonBg.setInteractive({ useHandCursor: true });
-        notificationContainer.add(this.transactionDetailsButtonBg);
-
-        this.transactionDetailsButtonText = this.add.text(0, 60, 'View Transaction Details', {
-            fontSize: '14px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        });
-        this.transactionDetailsButtonText.setOrigin(0.5);
-        notificationContainer.add(this.transactionDetailsButtonText);
-
-        // Button interactions
-        this.transactionDetailsButtonBg.on('pointerdown', () => {
-            this.showTransactionDetailsModal();
-            this.hideTransactionCompleteNotification();
-        });
-
-        this.transactionDetailsButtonBg.on('pointerover', () => {
-            this.transactionDetailsButtonBg?.setFillStyle(0x059669);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-
-        this.transactionDetailsButtonBg.on('pointerout', () => {
-            this.transactionDetailsButtonBg?.setFillStyle(0x10b981);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-
-        // Close button
-        const closeButton = this.add.text(200, -80, '×', {
-            fontSize: '24px',
-            color: '#9ca3af'
-        });
-        closeButton.setOrigin(0.5);
-        closeButton.setInteractive({ useHandCursor: true });
-        notificationContainer.add(closeButton);
-
-        closeButton.on('pointerdown', () => {
-            this.hideTransactionCompleteNotification();
-        });
-
-        closeButton.on('pointerover', () => {
-            closeButton.setStyle({ color: '#ffffff' });
-        });
-
-        closeButton.on('pointerout', () => {
-            closeButton.setStyle({ color: '#9ca3af' });
-        });
-
-        // Auto-hide after 5 seconds
-        this.time.delayedCall(5000, () => {
-            this.hideTransactionCompleteNotification();
-        });
-
-        // Store reference for cleanup
-        this.transactionDetailsButton = notificationContainer;
-    }
-
-    private hideTransactionCompleteNotification(): void {
-        if (this.transactionDetailsButton) {
-            this.transactionDetailsButton.destroy();
-            this.transactionDetailsButton = undefined;
-            this.transactionDetailsButtonBg = undefined;
-            this.transactionDetailsButtonText = undefined;
-        }
-    }
-
-    public showTransactionDetailsModal(): void {
-        if (!this.currentTransaction) return;
-
-        // Show the Phaser-based transaction details modal
-        this.showTransactionDetails(this.currentTransaction);
     }
 
 
@@ -4365,312 +2392,57 @@ export class UIScene extends Phaser.Scene {
         this.hideNPCTrade();
     }
 
-    private async handleAcceptTrade(): Promise<void> {
+    private handleAcceptTrade(): void {
         // Toggle lock state
         this.npcTradeLocked = !this.npcTradeLocked;
-
+        
         if (this.npcTradeLocked) {
             // Lock left slots (player's side)
             this.npcLeftSlots.forEach(slot => {
                 (slot.bg as Phaser.GameObjects.Image).setTint(0x888888);
             });
-
+            
             // Show player tick
             if (this.npcPlayerTick) {
                 this.npcPlayerTick.setVisible(true);
             }
-
+            
             // Change accept button text
             if (this.npcAcceptButton) {
                 this.npcAcceptButton.setText('Unlock');
             }
-
-            // Herman already has items populated, show his tick immediately
-            if (this.npcHermanTick) {
-                this.npcHermanTick.setVisible(true);
-            }
-
+            
+            // Start Herman's auto-fill animation
+            this.startHermanAutoFill();
+            
             console.log('Trade locked!');
         } else {
-            // If both sides are ready, execute blockchain trade
-            if (this.npcPlayerTick?.visible && this.npcHermanTick?.visible) {
-                await this.executeNPCTrade();
-                return;
-            }
-
             // Unlock all slots
             [...this.npcLeftSlots, ...this.npcRightSlots].forEach(slot => {
                 (slot.bg as Phaser.GameObjects.Image).clearTint();
             });
-
+            
             // Hide player tick
             if (this.npcPlayerTick) {
                 this.npcPlayerTick.setVisible(false);
             }
-
+            
             // Hide Herman tick
             if (this.npcHermanTick) {
                 this.npcHermanTick.setVisible(false);
             }
-
+            
             // Clear Herman's items
             for (let i = 0; i < 4; i++) {
                 this.clearNPCSlot(i, 'right');
             }
-
+            
             // Change accept button text back
             if (this.npcAcceptButton) {
                 this.npcAcceptButton.setText('Accept');
             }
-
+            
             console.log('Trade unlocked!');
-        }
-    }
-
-    private async executeNPCTrade(): Promise<void> {
-        if (this.isProcessingTransaction) return;
-
-        try {
-            this.isProcessingTransaction = true;
-            this.showTransactionProgress('Creating escrows for trade...');
-
-            // Get player items
-            const playerItems = this.npcLeftSlots
-                .filter(slot => slot.itemId)
-                .map(slot => ({
-                    id: slot.itemId!,
-                    name: this.getItemDisplayName(slot.itemId!),
-                    sprite_key: slot.itemId
-                }));
-
-            // Get NPC items
-            const npcItems = this.npcRightSlots
-                .filter(slot => slot.itemId)
-                .map(slot => ({
-                    id: slot.itemId!,
-                    name: this.getItemDisplayName(slot.itemId!),
-                    sprite_key: slot.itemId
-                }));
-
-            // Check if both sides have items (escrows must not be empty)
-            if (playerItems.length === 0 || npcItems.length === 0) {
-                throw new Error('Both sides must have items for trade');
-            }
-
-            this.showTransactionProgress('Executing trade with Herman...');
-
-            // Execute real blockchain escrow trading
-            await this.executeRealEscrowTrade(playerItems, npcItems);
-
-            // Update player inventory with NPC items
-            npcItems.forEach(item => {
-                this.addMarketplaceItemToInventory(item.id, 'item');
-            });
-
-            // Remove player items from slots
-            this.npcLeftSlots.forEach(slot => {
-                if (slot.itemImage) {
-                    slot.itemImage.destroy();
-                    slot.itemImage = undefined;
-                }
-                if (slot.countText) {
-                    slot.countText.destroy();
-                    slot.countText = undefined;
-                }
-                slot.itemId = undefined;
-                slot.itemType = undefined;
-            });
-
-            // Remove NPC items from slots
-            this.npcRightSlots.forEach(slot => {
-                if (slot.itemImage) {
-                    slot.itemImage.destroy();
-                    slot.itemImage = undefined;
-                }
-                if (slot.countText) {
-                    slot.countText.destroy();
-                    slot.countText = undefined;
-                }
-                slot.itemId = undefined;
-                slot.itemType = undefined;
-            });
-
-            // Show success message
-            this.showTransactionSuccess('Trade completed successfully!');
-
-            // Create transaction record with real escrow ID if available
-            const escrowId = await this.createPlayerEscrow(playerItems[0]?.id);
-            this.currentTransaction = {
-                transactionHash: escrowId || 'escrow_' + Date.now(),
-                blockNumber: Math.floor(Math.random() * 100000) + 2000000,
-                blockConfirmation: '12/12',
-                gasUsed: Math.floor(Math.random() * 30000) + 15000,
-                gasPrice: '0.0001',
-                gasCost: '0.0023',
-                timestamp: Date.now(),
-                status: 'completed',
-                itemsTraded: {
-                    playerItems: playerItems.map(item => ({
-                        id: item.id,
-                        name: item.name,
-                        quantity: 1,
-                        spriteKey: item.sprite_key || 'default-item'
-                    })),
-                    npcItems: npcItems.map(item => ({
-                        id: item.id,
-                        name: item.name,
-                        quantity: 1,
-                        spriteKey: item.sprite_key || 'default-item'
-                    }))
-                },
-                transactionType: 'NPC_TRADE',
-                price: undefined,
-                nftTransfers: []
-            };
-
-            // Show transaction completion notification (this is the ONLY modal shown)
-            this.showTransactionCompleteNotification();
-
-            // Emit event for React components
-            EventBus.emit('npc-trade-completed', this.currentTransaction);
-
-            // Reset trade UI
-            if (this.npcAcceptButton) {
-                this.npcAcceptButton.setText('Accept');
-            }
-
-            // Close the trade UI after a delay
-            this.time.delayedCall(3000, () => {
-                this.hideNPCTrade();
-            });
-
-        } catch (error) {
-            console.error('NPC trade error:', error);
-            this.showTransactionError('Trade failed');
-        } finally {
-            this.isProcessingTransaction = false;
-            this.hideTransactionProgress();
-        }
-    }
-
-    private async executeRealEscrowTrade(playerItems: any[], npcItems: any[]): Promise<void> {
-        try {
-            // Create escrows for both sides before executing trade
-            this.showTransactionProgress('Creating player escrow...');
-            const playerEscrowId = await this.createPlayerEscrow(playerItems[0]?.id);
-
-            this.showTransactionProgress('Creating NPC escrow...');
-            // NPC creates escrow with their items
-            let npcEscrowId: string;
-            if (npcItems.length > 0) {
-                try {
-                    // Ensure transaction service is ready
-                    if (!this.ensureTransactionServiceReady()) {
-                        throw new Error('Failed to initialize transaction service for NPC');
-                    }
-
-                    // Lock the first NPC item
-                    const npcLockResult = await this.oneChainTransactionService.lockItem(npcItems[0].id);
-                    npcEscrowId = `npc_escrow_${npcLockResult.lockedItemId}`;
-                } catch (error) {
-                    console.error('NPC escrow creation failed, using fallback:', error);
-                    npcEscrowId = 'npc_escrow_' + npcItems.map(item => item.id).join('_').substring(0, 32);
-                }
-            } else {
-                npcEscrowId = 'npc_escrow_empty_' + Date.now();
-            }
-
-            // Both escrows created successfully, now execute the swap
-            this.showTransactionProgress('Executing atomic swap...');
-
-            // Simulate blockchain processing time for the swap
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // In a real implementation, this would call:
-            // await this.oneChainTransactionService.executeSwap(playerEscrowId, npcEscrowId);
-
-            // Trade completed successfully - items are now swapped on blockchain
-            console.log('Escrow swap completed:', { playerEscrowId, npcEscrowId });
-
-        } catch (error) {
-            console.error('Escrow trade failed:', error);
-            throw error;
-        }
-    }
-
-    private ensureTransactionServiceReady(): boolean {
-        if (!this.oneChainTransactionService) {
-            console.error('OneChain transaction service not available');
-            return false;
-        }
-
-        // Get fresh instance from WalletBridgeService to ensure it has the latest signer
-        const walletBridge = WalletBridgeService.getInstance();
-        const freshTransactionService = walletBridge.getTransactionService();
-
-        if (freshTransactionService) {
-            this.oneChainTransactionService = freshTransactionService;
-        } else {
-            console.error('Transaction service not available from WalletBridgeService');
-            return false;
-        }
-
-        return true;
-    }
-
-    private async createPlayerEscrow(itemId: string): Promise<string> {
-        if (!itemId) throw new Error('No item to escrow');
-
-        try {
-            // Ensure transaction service is ready with proper signer
-            if (!this.ensureTransactionServiceReady()) {
-                throw new Error('Failed to initialize transaction service');
-            }
-
-            const autoMint = AutoMintService.getInstance();
-
-            // Try to mint if not already minted
-            let nftObjectId: string | null = null;
-
-            // If this already looks like a blockchain object, trust it as-is
-            if (itemId.startsWith('0x') && itemId.length === 66) {
-                nftObjectId = itemId;
-            } else {
-                // Check if we've already minted this item earlier
-                nftObjectId = autoMint.getNFTObjectId(itemId);
-
-                if (!nftObjectId) {
-                    console.log('🎨 Item not yet minted, minting now for escrow...');
-                    const mintMetadata = this.buildMintMetadata(itemId);
-                    nftObjectId = await autoMint.mintItemNow(mintMetadata);
-                }
-            }
-
-            if (!nftObjectId || !nftObjectId.startsWith('0x') || nftObjectId.length !== 66) {
-                throw new Error(`Unable to obtain NFT object ID for ${itemId}. Please mint the item before trading.`);
-            }
-
-            // Lock the item
-            const lockResult = await this.oneChainTransactionService.lockItem(nftObjectId);
-
-            // Create escrow identifier from the locked item
-            const escrowId = `escrow_${lockResult.lockedItemId}`;
-
-            console.log('Successfully created player escrow:', escrowId);
-            return escrowId;
-
-        } catch (error) {
-            console.error('Failed to create player escrow:', error);
-
-            if (error instanceof Error) {
-                console.log('⚠️ Item not yet available on-chain. Using simulation mode for this trade.');
-                console.log(`ℹ️ Mint attempt message: ${error.message}`);
-            }
-
-            // Fallback to simulated escrow for now
-            const fallbackEscrowId = '0xplayer_escrow_' + Date.now();
-            console.log('Using fallback escrow ID:', fallbackEscrowId);
-            return fallbackEscrowId;
         }
     }
 
@@ -4749,41 +2521,6 @@ export class UIScene extends Phaser.Scene {
         });
 
         this.#hudContainer.add(guideButton);
-
-        // Create exit button below guide button
-        const exitButton = this.add.image(
-            this.cameras.main.width - 50,
-            190,
-            'settings-button'
-        );
-        exitButton.setScrollFactor(0);
-        exitButton.setDepth(100);
-        exitButton.setScale(1.0);
-        exitButton.setInteractive();
-
-        exitButton.on('pointerover', () => {
-            exitButton.setScale(1.1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-
-        exitButton.on('pointerout', () => {
-            exitButton.setScale(1.0);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-
-        exitButton.on('pointerdown', () => {
-            this.showExitConfirmation();
-        });
-
-        this.#hudContainer.add(exitButton);
-
-        // Add keyboard shortcut for exit to menu (Ctrl+X)
-        this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-            if (event.ctrlKey && event.key === 'x') {
-                event.preventDefault();
-                this.showExitConfirmation();
-            }
-        });
     }
 
     private toggleGuideMenu(): void {
@@ -4821,20 +2558,13 @@ export class UIScene extends Phaser.Scene {
         this.guideMenuContainer.setScrollFactor(0);
         this.guideMenuContainer.setDepth(5001);
 
-        // Modal dimensions and spacing
-        const panelWidth = 600;
-        const panelHeight = 600;
-        const padding = 20;
-        const titleHeight = 40;
-        const closeButtonSize = 32;
-
         // Background panel (taller to fit content)
-        const panel = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x2a2a2a, 0.95);
+        const panel = this.add.rectangle(0, 0, 600, 600, 0x2a2a2a, 0.95);
         panel.setStrokeStyle(3, 0x4a4a4a);
         this.guideMenuContainer.add(panel);
 
         // Title
-        const title = this.add.text(0, -panelHeight / 2 + padding + titleHeight / 2, '📖 GAME GUIDE', {
+        const title = this.add.text(0, -280, '📖 GAME GUIDE', {
             fontSize: '28px',
             color: '#ffcc00',
             fontStyle: 'bold'
@@ -4868,26 +2598,21 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
 • Double-click to organize quickly
 • Right-click to split for trading`;
 
-        const content = this.add.text(0, padding, guideText, {
+        const content = this.add.text(0, 18, guideText, {
             fontSize: '14px',
             color: '#ffffff',
             align: 'left',
             lineSpacing: 8,
-            wordWrap: { width: panelWidth - padding * 4 }
+            wordWrap: { width: 550 }
         }).setOrigin(0.5);
         this.guideMenuContainer.add(content);
 
         // Close button
-        const closeBtn = this.add.text(
-            panelWidth / 2 - padding - closeButtonSize / 2,
-            -panelHeight / 2 + padding + titleHeight / 2,
-            'X',
-            {
-                fontSize: '32px',
-                color: '#ff4444',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5);
+        const closeBtn = this.add.text(280, -280, 'X', {
+            fontSize: '32px',
+            color: '#ff4444',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
         closeBtn.setInteractive();
         closeBtn.on('pointerdown', () => this.hideGuideMenu());
         closeBtn.on('pointerover', () => {
@@ -4951,22 +2676,13 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
         this.settingsMenuContainer.setScrollFactor(0);
         this.settingsMenuContainer.setDepth(5001);
 
-        // Modal dimensions and spacing
-        const panelWidth = 400;
-        const panelHeight = 300;
-        const padding = 20;
-        const titleHeight = 40;
-        const closeButtonSize = 32;
-        const rowHeight = 50;
-        const controlWidth = 200;
-
         // Background panel
-        const panel = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x2a2a2a, 0.95);
+        const panel = this.add.rectangle(0, 0, 400, 300, 0x2a2a2a, 0.95);
         panel.setStrokeStyle(3, 0x4a4a4a);
         this.settingsMenuContainer.add(panel);
 
         // Title
-        const title = this.add.text(0, -panelHeight / 2 + padding + titleHeight / 2, '⚙️ SETTINGS', {
+        const title = this.add.text(0, -130, '⚙️ SETTINGS', {
             fontSize: '28px',
             color: '#ffcc00',
             fontStyle: 'bold'
@@ -4974,24 +2690,23 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
         this.settingsMenuContainer.add(title);
 
         // Music Volume Label
-        const volumeLabel = this.add.text(-panelWidth / 2 + padding, -panelHeight / 2 + titleHeight + padding * 3, '🔊 Music Volume', {
+        const volumeLabel = this.add.text(-150, -60, '🔊 Music Volume', {
             fontSize: '18px',
             color: '#ffffff'
         }).setOrigin(0, 0.5);
         this.settingsMenuContainer.add(volumeLabel);
 
         // Slider track
-        const sliderY = -panelHeight / 2 + titleHeight + padding * 3 + rowHeight;
-        const sliderTrack = this.add.rectangle(0, sliderY, controlWidth, 8, 0x555555);
+        const sliderTrack = this.add.rectangle(0, -20, 200, 8, 0x555555);
         this.settingsMenuContainer.add(sliderTrack);
 
         // Slider knob
-        this.volumeSliderKnob = this.add.circle(this.musicVolume * controlWidth - controlWidth / 2, sliderY, 12, 0xffffff);
+        this.volumeSliderKnob = this.add.circle(this.musicVolume * 200 - 100, -20, 12, 0xffffff);
         this.volumeSliderKnob.setInteractive({ draggable: true });
         this.settingsMenuContainer.add(this.volumeSliderKnob);
 
         // Volume value text
-        this.volumeValueText = this.add.text(controlWidth / 2 + padding, sliderY, `${Math.round(this.musicVolume * 100)}%`, {
+        this.volumeValueText = this.add.text(120, -20, `${Math.round(this.musicVolume * 100)}%`, {
             fontSize: '16px',
             color: '#ffffff'
         }).setOrigin(0, 0.5);
@@ -5000,30 +2715,27 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
         // Slider drag logic
         this.volumeSliderKnob.on('drag', (pointer: Phaser.Input.Pointer) => {
             const localX = pointer.x - this.cameras.main.centerX;
-            const halfWidth = controlWidth / 2;
-            const clampedX = Phaser.Math.Clamp(localX, -halfWidth, halfWidth);
+            const clampedX = Phaser.Math.Clamp(localX, -100, 100);
             this.volumeSliderKnob!.x = clampedX;
-            this.musicVolume = (clampedX + halfWidth) / controlWidth;
+            this.musicVolume = (clampedX + 100) / 200;
             this.volumeValueText!.setText(`${Math.round(this.musicVolume * 100)}%`);
         });
 
         // Fullscreen Label
-        const fullscreenY = sliderY + rowHeight;
-        const fullscreenLabel = this.add.text(-panelWidth / 2 + padding, fullscreenY, '🖥️ Fullscreen', {
+        const fullscreenLabel = this.add.text(-150, 40, '🖥️ Fullscreen', {
             fontSize: '18px',
             color: '#ffffff'
         }).setOrigin(0, 0.5);
         this.settingsMenuContainer.add(fullscreenLabel);
 
         // Checkbox
-        const checkboxX = panelWidth / 2 - padding * 3;
-        this.fullscreenCheckbox = this.add.rectangle(checkboxX, fullscreenY, 30, 30, 0x555555);
+        this.fullscreenCheckbox = this.add.rectangle(80, 40, 30, 30, 0x555555);
         this.fullscreenCheckbox.setStrokeStyle(2, 0xffffff);
         this.fullscreenCheckbox.setInteractive();
         this.settingsMenuContainer.add(this.fullscreenCheckbox);
 
         // Checkmark
-        this.fullscreenCheckmark = this.add.text(checkboxX, fullscreenY, '✓', {
+        this.fullscreenCheckmark = this.add.text(80, 40, '✓', {
             fontSize: '24px',
             color: '#00ff00',
             fontStyle: 'bold'
@@ -5038,8 +2750,7 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
         });
 
         // Save button (64x32 px)
-        const saveBtnY = panelHeight / 2 - padding * 3;
-        const saveBtn = this.add.image(0, saveBtnY, 'save-button');
+        const saveBtn = this.add.image(0, 110, 'save-button');
         saveBtn.setOrigin(0.5);
         saveBtn.setInteractive();
         this.settingsMenuContainer.add(saveBtn);
@@ -5061,16 +2772,11 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
         });
 
         // Close button
-        const closeBtn = this.add.text(
-            panelWidth / 2 - padding - closeButtonSize / 2,
-            -panelHeight / 2 + padding + titleHeight / 2,
-            'X',
-            {
-                fontSize: '32px',
-                color: '#ff4444',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5);
+        const closeBtn = this.add.text(180, -130, 'X', {
+            fontSize: '32px',
+            color: '#ff4444',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
         closeBtn.setInteractive();
         closeBtn.on('pointerdown', () => this.hideSettingsMenu());
         closeBtn.on('pointerover', () => {
@@ -5113,189 +2819,5 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
             this.settingsMenuOverlay.setVisible(false);
         }
         this.settingsMenuVisible = false;
-    }
-
-    // ===== EXIT CONFIRMATION =====
-
-    private showExitConfirmation(): void {
-        if (this.exitConfirmationContainer) {
-            this.exitConfirmationContainer.setVisible(true);
-            this.exitConfirmationOverlay?.setVisible(true);
-            this.exitConfirmationVisible = true;
-            return;
-        }
-
-        // Create overlay
-        this.exitConfirmationOverlay = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            this.cameras.main.width * 2,
-            this.cameras.main.height * 2,
-            0x000000,
-            0.8
-        );
-        this.exitConfirmationOverlay.setOrigin(0.5);
-        this.exitConfirmationOverlay.setDepth(5000);
-        this.exitConfirmationOverlay.setScrollFactor(0);
-        this.exitConfirmationOverlay.setInteractive();
-
-        // Create container
-        this.exitConfirmationContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
-        this.exitConfirmationContainer.setScrollFactor(0);
-        this.exitConfirmationContainer.setDepth(5001);
-
-        // Improved modal dimensions and spacing
-        const panelWidth = 450;
-        const panelHeight = 300;
-        const padding = 25;
-        const titleHeight = 45;
-        const closeButtonSize = 36;
-        const buttonWidth = 120;
-        const buttonHeight = 45;
-        const buttonSpacing = 25;
-
-        // Background panel with rounded corners effect
-        const panel = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x2a2a2a, 0.98);
-        panel.setStrokeStyle(4, 0x4a4a4a);
-        this.exitConfirmationContainer.add(panel);
-
-        // Add subtle inner border for depth
-        const innerBorder = this.add.rectangle(0, 0, panelWidth - 8, panelHeight - 8, 0x3a3a3a, 0.3);
-        innerBorder.setStrokeStyle(2, 0x5a5a5a);
-        this.exitConfirmationContainer.add(innerBorder);
-
-        // Title with background panel
-        const titlePanel = this.add.rectangle(0, -panelHeight/2 + titleHeight/2 + padding/2, panelWidth - 40, titleHeight, 0x1a1a1a, 0.9);
-        titlePanel.setStrokeStyle(2, 0x444444);
-        this.exitConfirmationContainer.add(titlePanel);
-
-        const title = this.add.text(0, -panelHeight/2 + titleHeight/2 + padding/2, '🚪 EXIT TO MENU', {
-            fontSize: '32px',
-            color: '#ffcc00',
-            fontStyle: 'bold',
-            fontFamily: 'Arial, sans-serif',
-            shadow: {
-                offsetX: 2,
-                offsetY: 2,
-                color: '#000000',
-                blur: 4,
-                stroke: true,
-                fill: true
-            }
-        }).setOrigin(0.5);
-        this.exitConfirmationContainer.add(title);
-
-        // Close button (X) - positioned relative to title panel
-        const closeBtnX = panelWidth/2 - padding/2 - closeButtonSize/2;
-        const closeBtnY = -panelHeight/2 + titleHeight/2 + padding/2;
-        const closeBtn = this.add.text(closeBtnX, closeBtnY, '✕', {
-            fontSize: '28px',
-            color: '#ff4444',
-            fontStyle: 'bold',
-            backgroundColor: '#1a1a1a',
-            padding: { x: 8, y: 6 }
-        }).setOrigin(0.5);
-        closeBtn.setInteractive();
-        closeBtn.on('pointerdown', () => this.hideExitConfirmation());
-        closeBtn.on('pointerover', () => {
-            closeBtn.setScale(1.15);
-            closeBtn.setColor('#ff6666');
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        closeBtn.on('pointerout', () => {
-            closeBtn.setScale(1);
-            closeBtn.setColor('#ff4444');
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-        this.exitConfirmationContainer.add(closeBtn);
-
-        // Warning icon and message container
-        const messageY = -30;
-        const warningIcon = this.add.text(0, messageY - 25, '⚠️', {
-            fontSize: '48px'
-        }).setOrigin(0.5);
-        this.exitConfirmationContainer.add(warningIcon);
-
-        // Confirmation message with improved formatting
-        const message = this.add.text(0, messageY + 15, 'Are you sure you want to exit to the menu?\n\nAll unsaved progress will be lost.', {
-            fontSize: '18px',
-            color: '#ffffff',
-            align: 'center',
-            wordWrap: { width: panelWidth - padding * 3 },
-            lineSpacing: 12,
-            fontFamily: 'Arial, sans-serif'
-        }).setOrigin(0.5);
-        this.exitConfirmationContainer.add(message);
-
-        // Button container for better alignment
-        const buttonY = panelHeight/2 - padding - buttonHeight/2;
-
-        // Yes button (confirm exit) - styled as danger action
-        const yesBtnBg = this.add.rectangle(-buttonSpacing - buttonWidth/2, buttonY, buttonWidth, buttonHeight, 0xd32f2f, 0.9);
-        yesBtnBg.setStrokeStyle(3, 0xb71c1c);
-        yesBtnBg.setInteractive();
-        this.exitConfirmationContainer.add(yesBtnBg);
-
-        const yesBtn = this.add.text(-buttonSpacing - buttonWidth/2, buttonY, 'EXIT', {
-            fontSize: '20px',
-            color: '#ffffff',
-            fontStyle: 'bold',
-            fontFamily: 'Arial, sans-serif'
-        }).setOrigin(0.5);
-        this.exitConfirmationContainer.add(yesBtn);
-
-        yesBtnBg.on('pointerover', () => {
-            yesBtnBg.setScale(1.05);
-            yesBtnBg.setFillStyle(0xe53935);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        yesBtnBg.on('pointerout', () => {
-            yesBtnBg.setScale(1);
-            yesBtnBg.setFillStyle(0xd32f2f);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-        yesBtnBg.on('pointerdown', () => {
-            this.hideExitConfirmation();
-            window.location.reload();
-        });
-
-        // No button (cancel) - styled as safe action
-        const noBtnBg = this.add.rectangle(buttonSpacing + buttonWidth/2, buttonY, buttonWidth, buttonHeight, 0x388e3c, 0.9);
-        noBtnBg.setStrokeStyle(3, 0x2e7d32);
-        noBtnBg.setInteractive();
-        this.exitConfirmationContainer.add(noBtnBg);
-
-        const noBtn = this.add.text(buttonSpacing + buttonWidth/2, buttonY, 'CANCEL', {
-            fontSize: '20px',
-            color: '#ffffff',
-            fontStyle: 'bold',
-            fontFamily: 'Arial, sans-serif'
-        }).setOrigin(0.5);
-        this.exitConfirmationContainer.add(noBtn);
-
-        noBtnBg.on('pointerover', () => {
-            noBtnBg.setScale(1.05);
-            noBtnBg.setFillStyle(0x43a047);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-        noBtnBg.on('pointerout', () => {
-            noBtnBg.setScale(1);
-            noBtnBg.setFillStyle(0x388e3c);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-        noBtnBg.on('pointerdown', () => this.hideExitConfirmation());
-
-        this.#hudContainer.add(this.exitConfirmationContainer);
-        this.exitConfirmationVisible = true;
-    }
-
-    private hideExitConfirmation(): void {
-        if (this.exitConfirmationContainer) {
-            this.exitConfirmationContainer.setVisible(false);
-        }
-        if (this.exitConfirmationOverlay) {
-            this.exitConfirmationOverlay.setVisible(false);
-        }
-        this.exitConfirmationVisible = false;
     }
 }

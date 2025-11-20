@@ -10,10 +10,6 @@ const config: Types.Core.GameConfig = {
     type: AUTO,
     parent: 'game-container',
     backgroundColor: '#000000',
-    render: {
-        pixelArt: true,
-        roundPixels: true
-    },
     scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH
