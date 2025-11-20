@@ -31,32 +31,32 @@ export class WorldSelectionScene extends Scene {
     private worldsTab!: Phaser.GameObjects.Container;
 
     private allWorlds: WorldData[] = [
-        { name: "YOUR FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "SUNNY FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "GREEN FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "VALLEY FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "HILL FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "RIVER FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "FOREST FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "MEADOW FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "SUNSET FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "MAPLE FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "SPRING FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "AUTUMN FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "WINTER FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "SUMMER FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
-        { name: "MOON FARM", thumbnail: 'farm_map', mapKey: 'FarmScene' },
+        { name: "YOUR FARM", thumbnail: 'farm_eg', mapKey: 'FarmScene' },
+        { name: "SUNNY FARM", thumbnail: 'sunny_farm', mapKey: 'FarmScene' },
+        { name: "GREEN FARM", thumbnail: 'green_farm', mapKey: 'FarmScene' },
+        { name: "VALLEY FARM", thumbnail: 'valley_farm', mapKey: 'FarmScene' },
+        { name: "HILL FARM", thumbnail: 'hill_farm', mapKey: 'FarmScene' },
+        { name: "RIVER FARM", thumbnail: 'river_farm', mapKey: 'FarmScene' },
+        { name: "FOREST FARM", thumbnail: 'sunny_farm', mapKey: 'FarmScene' },
+        { name: "MEADOW FARM", thumbnail: 'green_farm', mapKey: 'FarmScene' },
+        { name: "SUNSET FARM", thumbnail: 'valley_farm', mapKey: 'FarmScene' },
+        { name: "MAPLE FARM", thumbnail: 'hill_farm', mapKey: 'FarmScene' },
+        { name: "SPRING FARM", thumbnail: 'river_farm', mapKey: 'FarmScene' },
+        { name: "AUTUMN FARM", thumbnail: 'farm_eg', mapKey: 'FarmScene' },
+        { name: "WINTER FARM", thumbnail: 'sunny_farm', mapKey: 'FarmScene' },
+        { name: "SUMMER FARM", thumbnail: 'green_farm', mapKey: 'FarmScene' },
+        { name: "MOON FARM", thumbnail: 'valley_farm', mapKey: 'FarmScene' },
     ];
 
     private friends: FriendData[] = [
-        { name: "ALEX", status: "ONLINE", thumbnail: 'farm_thumbnail' },
-        { name: "EMMA", status: "OFFLINE", thumbnail: 'farm_thumbnail' },
-        { name: "JACK", status: "ONLINE", thumbnail: 'farm_thumbnail' },
-        { name: "LILY", status: "ONLINE", thumbnail: 'farm_thumbnail' },
-        { name: "MAX", status: "OFFLINE", thumbnail: 'farm_thumbnail' },
-        { name: "SOPHIE", status: "ONLINE", thumbnail: 'farm_thumbnail' },
-        { name: "NOAH", status: "OFFLINE", thumbnail: 'farm_thumbnail' },
-        { name: "MIA", status: "ONLINE", thumbnail: 'farm_thumbnail' },
+        { name: "ALEX", status: "ONLINE", thumbnail: 'sunny_farm' },
+        { name: "EMMA", status: "OFFLINE", thumbnail: 'green_farm' },
+        { name: "JACK", status: "ONLINE", thumbnail: 'valley_farm' },
+        { name: "LILY", status: "ONLINE", thumbnail: 'hill_farm' },
+        { name: "MAX", status: "OFFLINE", thumbnail: 'river_farm' },
+        { name: "SOPHIE", status: "ONLINE", thumbnail: 'farm_eg' },
+        { name: "NOAH", status: "OFFLINE", thumbnail: 'sunny_farm' },
+        { name: "MIA", status: "ONLINE", thumbnail: 'green_farm' },
     ];
 
     private worlds: WorldData[] = [];
@@ -72,20 +72,23 @@ export class WorldSelectionScene extends Scene {
         // Load the login menu background
         this.load.image('menu_bg', 'bg.webp');
         
-        // Load farm example image for all cards
-        this.load.image('farm_thumbnail', 'farm_eg.webp');
+        // Load all farm images
+        this.load.image('farm_eg', 'farm_eg.webp');
+        this.load.image('sunny_farm', 'sunny_farm.jpg');
+        this.load.image('green_farm', 'green_farm.jpg');
+        this.load.image('valley_farm', 'valley_farm.jpg');
+        this.load.image('hill_farm', 'hill_farm.jpg');
+        this.load.image('river_farm', 'river_farm.jpg');
         
-        // Debug: Check if image loaded
+        // Debug: Check if images loaded
         this.load.on('filecomplete', (key: string) => {
-            if (key === 'farm_thumbnail') {
-                console.log('Farm thumbnail loaded successfully!');
+            if (key.includes('farm')) {
+                console.log(`${key} loaded successfully!`);
             }
         });
         
-        this.load.on('filecompletefailed', (key: string) => {
-            if (key === 'farm_thumbnail') {
-                console.error('Failed to load farm thumbnail!');
-            }
+        this.load.on('filecomplete-image-farm_thumbnail', () => {
+            console.log('Farm thumbnail loaded successfully!');
         });
     }
 
@@ -462,11 +465,11 @@ export class WorldSelectionScene extends Scene {
         thumbnailBg.fillStyle(0xF5DEB3, 0.5); // Light background
         thumbnailBg.fillRect(-size / 2 + 12, -size / 2 + 12, thumbnailWidth, thumbnailHeight - 12);
         
-        // Add the farm image
-        const farmImage = this.add.image(0, -size / 2 + 12 + (thumbnailHeight - 12) / 2, 'farm_thumbnail');
+        // Add the farm image using the specific thumbnail from worldData
+        const farmImage = this.add.image(0, -size / 2 + 12 + (thumbnailHeight - 12) / 2, worldData.thumbnail);
         
-        if (this.textures.exists('farm_thumbnail')) {
-            console.log('Farm thumbnail loaded, dimensions:', farmImage.width, farmImage.height);
+        if (this.textures.exists(worldData.thumbnail)) {
+            console.log(`${worldData.thumbnail} loaded, dimensions:`, farmImage.width, farmImage.height);
             
             // Scale the image to fit the thumbnail area while maintaining aspect ratio
             const scaleX = thumbnailWidth / farmImage.width;
@@ -476,7 +479,7 @@ export class WorldSelectionScene extends Scene {
             
             console.log('Applied scale:', scale, 'Final size:', farmImage.displayWidth, farmImage.displayHeight);
         } else {
-            console.error('Farm thumbnail texture does not exist!');
+            console.error(`Farm thumbnail texture ${worldData.thumbnail} does not exist!`);
         }
         
         // Add pixel grid pattern overlay on thumbnail
@@ -590,8 +593,8 @@ export class WorldSelectionScene extends Scene {
         thumbnailBg.fillStyle(0xF5DEB3, 0.5);
         thumbnailBg.fillRect(-size / 2 + 12, -size / 2 + 12, thumbnailWidth, thumbnailHeight - 12);
         
-        const farmImage = this.add.image(0, -size / 2 + 12 + (thumbnailHeight - 12) / 2, 'farm_thumbnail');
-        if (this.textures.exists('farm_thumbnail')) {
+        const farmImage = this.add.image(0, -size / 2 + 12 + (thumbnailHeight - 12) / 2, friendData.thumbnail);
+        if (this.textures.exists(friendData.thumbnail)) {
             const scaleX = thumbnailWidth / farmImage.width;
             const scaleY = (thumbnailHeight - 12) / farmImage.height;
             farmImage.setScale(Math.min(scaleX, scaleY));
