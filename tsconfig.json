@@ -17,6 +17,7 @@
     "jsx": "preserve",
     "incremental": true,
     "strictPropertyInitialization": false,
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
@@ -25,7 +26,7 @@
     "target": "ES2017"
   },
   "include": [
-    "next-env.d.ts",
+    "devdocs/next-env.d.ts",
     "**/*.ts",
     "**/*.tsx"
   ],

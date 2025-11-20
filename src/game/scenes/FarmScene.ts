@@ -3,6 +3,23 @@ import { EventBus } from '../EventBus';
 import { UIScene } from './UIScene';
 import { SCENE_KEYS } from './SceneKeys';
 import { Enemy } from '../enemies/Enemy';
+import { getOpenRouterService, OpenRouterService } from '../../services/OpenRouterService';
+import { ContextualActionManager } from '../managers/ContextualActionManager';
+import { FloatingHintManager } from '../managers/FloatingHintManager';
+import { OneChainHarvester } from '../../services/OneChainHarvester';
+import WalletBridgeService from '../../services/WalletBridgeService';
+import { SuiClient } from '@onelabs/sui/client';
+import { ONECHAIN_NETWORK } from '../../config/contracts';
+import HUDBridgeService from '../../services/HUDBridgeService';
+import AutoMintService, { GameItem } from '../../services/AutoMintService';
+
+interface Crop {
+    x: number;
+    y: number;
+    growthStage: number; // 0: seed, 1: growing, 2: mature
+    type: 'carrot';
+    plantedTime: number;
+}
 
 interface ColliderShape {
     x: number;
@@ -47,6 +64,33 @@ export class FarmScene extends Scene {
     private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
     private waterTileIndices: Set<number> = new Set([6, 60, 61, 62, 115, 116, 117, 118]); // Water tile indices
 
+    // Crop management
+    private crops: Map<string, Crop> = new Map();
+    private cropGrowthTimers: Map<string, Phaser.Time.TimerEvent> = new Map();
+
+    // Sprite-based crop system to solve overlapping issues
+    private cropSprites: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
+    private windEffectTweens: Map<string, Phaser.Tweens.Tween[]> = new Map();
+
+    // Harvesting system
+    private droppedCarrots: Map<string, Phaser.GameObjects.Sprite> = new Map();
+    private harvestKey!: Phaser.Input.Keyboard.Key;
+    private collectKey!: Phaser.Input.Keyboard.Key;
+    private marketplaceKey!: Phaser.Input.Keyboard.Key;
+    private harvestedCarrotCount: number = 0;
+    private collectButton!: Phaser.GameObjects.Container;
+    private collectButtonText!: Phaser.GameObjects.Text;
+    private isHarvesting: boolean = false;
+    private isCollecting: boolean = false;
+
+    // Mint confirmation modal properties (following transaction details modal pattern)
+    private mintModalContainer!: Phaser.GameObjects.Container;
+    private mintModalVisible: boolean = false;
+    private mintModalCreated: boolean = false;
+    private mintModalOverlay!: Phaser.GameObjects.Rectangle;
+    private mintModalCloseButton!: Phaser.GameObjects.GameObject;
+    private pendingMintCount: number = 0;
+
     // Player state
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
@@ -83,9 +127,28 @@ export class FarmScene extends Scene {
     private isChatting: boolean = false;
     private chatBubble!: Phaser.GameObjects.Container;
     private chatBackground!: Phaser.GameObjects.Graphics;
+
+    // Transaction notification system
+    private transactionNotificationQueue: Array<{
+      message: string;
+      type: 'success' | 'info' | 'warning';
+      duration: number;
+    }> = [];
+    private isShowingNotification: boolean = false;
+    private currentNotificationText?: Phaser.GameObjects.Text;
+    private currentNotificationBackground?: Phaser.GameObjects.Graphics;
+    private notificationContainer?: Phaser.GameObjects.Container;
     private chatText!: Phaser.GameObjects.Text;
     private playerInput: string = '';
     private npcResponse!: Phaser.GameObjects.Text;
+    private openRouterService!: OpenRouterService;
+    
+    // HUD Bridge for React HUD integration
+    private hudBridge!: HUDBridgeService;
+
+    // Contextual Action System
+    private contextualActionManager!: ContextualActionManager;
+    private floatingHintManager!: FloatingHintManager;
 
     // Settings UI
     private settingsIcon!: Phaser.GameObjects.Image;
@@ -93,8 +156,14 @@ export class FarmScene extends Scene {
 
     // Marketplace
     private marketplaceIcon!: Phaser.GameObjects.Image;
+
+    // OneChain Harvester
+    private oneChainHarvester!: OneChainHarvester;
+    private suiClient!: SuiClient;
+    private walletBridge!: WalletBridgeService;
     private isNearMarketplace: boolean = false;
 
+    
     constructor() {
         super('FarmScene');
     }
@@ -244,28 +313,66 @@ export class FarmScene extends Scene {
         this.load.image('save-button', 'save-button.png');
         this.load.image('hover-save-button', 'hover-save-button.png');
         this.load.image('selected-save-button', 'selected-save-button.png');
-        
+
         // Settings button
         this.load.image('settings-button', 'settings-button.png');
-        
+
         // Guide button
         this.load.image('guide-button', 'guide-button.png');
-        
+
+        // Exit button
+        this.load.image('exit-button', 'exit-button.png');
+
         // Guide menu image (you'll add this)
         // this.load.image('guide-menu', 'guide-menu.png');
-        
+
         this.load.setPath('assets');
+        // Load carrot sprites for different growth stages (use absolute paths)
+        this.load.image('carrot_stage1', 'carrot-new.png');
+        this.load.image('carrot_stage2', 'carrot-stage2.png');
+        this.load.image('carrot_stage3', 'carrot-stage3.png');
+
+        
 
         // Debug: Log when assets are loaded
         this.load.on('complete', () => {
             console.log('Assets loaded successfully');
             console.log('itembar texture exists:', this.textures.exists('itembar'));
             console.log('slot texture exists:', this.textures.exists('slot'));
+            console.log('carrot_stage1 texture exists:', this.textures.exists('carrot_stage1'));
+            console.log('carrot_stage2 texture exists:', this.textures.exists('carrot_stage2'));
+            console.log('carrot_stage3 texture exists:', this.textures.exists('carrot_stage3'));
         });
     }
 
     create() {
         console.log('FarmScene create() started');
+
+        // Initialize OpenRouter service for NPC chat
+        this.openRouterService = getOpenRouterService();
+
+        // Initialize contextual action system
+        this.contextualActionManager = new ContextualActionManager(this);
+        this.floatingHintManager = new FloatingHintManager(this);
+
+        // Initialize OneChain services for real blockchain minting
+        this.suiClient = new SuiClient({ url: ONECHAIN_NETWORK.RPC_URL });
+        this.walletBridge = WalletBridgeService.getInstance();
+        this.oneChainHarvester = this.walletBridge.getHarvester() || new OneChainHarvester(this.suiClient);
+        
+        // Initialize HUD Bridge for React HUD
+        this.hudBridge = HUDBridgeService.getInstance();
+        this.hudBridge.updatePlayerStats({
+            health: this.playerCurrentHp,
+            maxHealth: this.playerMaxHp,
+            energy: 100,
+            maxEnergy: 100,
+            level: 1,
+            experience: 0,
+            experienceToNextLevel: 100,
+        });
+        this.hudBridge.setGoldCount(0);
+        this.hudBridge.setCurrentScene('farm');
 
         // Reset state variables and clear references to destroyed objects
         this.isNearNPC = false;
@@ -309,6 +416,8 @@ export class FarmScene extends Scene {
         this.createEnemies();
         this.setupInputs();
         this.setupCamera();
+        this.createCollectButton();
+        this.createMintModal();
 
         // Create particles
         this.createParticles();
@@ -320,6 +429,9 @@ export class FarmScene extends Scene {
         this.handleInteraction();
 
         EventBus.emit('current-scene-ready', this);
+
+        // Set up transaction notification listeners
+        this.setupTransactionNotifications();
 
         // Stop UIScene if it exists, then start it fresh
         if (this.scene.isActive(SCENE_KEYS.UI)) {
@@ -367,6 +479,55 @@ export class FarmScene extends Scene {
         this.updateChatBubblePosition();
         this.checkNPCProximity();
         this.checkMarketplaceProximity();
+        this.updateCollectButton();
+        this.updateFloatingCarrots();
+
+        // Update contextual action system
+        if (this.contextualActionManager && this.floatingHintManager) {
+            const actionResult = this.contextualActionManager.update();
+            this.floatingHintManager.update(actionResult.availableActions);
+        }
+
+        // Handle harvesting
+        if (this.harvestKey.isDown && !this.isHarvesting) {
+            this.tryHarvestCrop();
+        }
+    }
+
+    private applyWindEffect(sprite: Phaser.GameObjects.Sprite, cropKey: string): void {
+        // Create subtle wind sway effect with random timing for natural look
+        const baseDelay = Phaser.Math.Between(0, 2000);
+        const swayDuration = Phaser.Math.Between(1500, 2500);
+        const swayAngle = Phaser.Math.FloatBetween(1.5, 3);
+        const scaleFactor = Phaser.Math.FloatBetween(0.98, 1.02);
+
+        // Rotation tween - subtle sway left and right
+        const rotationTween = this.tweens.add({
+            targets: sprite,
+            angle: { from: -swayAngle, to: swayAngle },
+            duration: swayDuration,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1,
+            delay: baseDelay
+        });
+
+        // Scale tween - very subtle breathing effect
+        const scaleTween = this.tweens.add({
+            targets: sprite,
+            scaleX: scaleFactor,
+            scaleY: scaleFactor,
+            duration: swayDuration * 0.8,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1,
+            delay: baseDelay + 200
+        });
+
+        // Store tweens for cleanup
+        const existingTweens = this.windEffectTweens.get(cropKey) || [];
+        existingTweens.push(rotationTween, scaleTween);
+        this.windEffectTweens.set(cropKey, existingTweens);
     }
 
 
@@ -518,7 +679,8 @@ export class FarmScene extends Scene {
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
-    }
+
+          }
 
     private openMarketplace(): void {
         const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
@@ -543,6 +705,42 @@ export class FarmScene extends Scene {
         const chatboxIndicator = this.player.getData('chatboxIndicator');
         if (chatboxIndicator && chatboxIndicator.active) {
             chatboxIndicator.setPosition(this.player.x + 20, this.player.y - 15);
+        }
+
+        // Check for overlap and adjust transparency
+        this.checkAndHandleBubbleOverlap();
+    }
+
+    private checkAndHandleBubbleOverlap(): void {
+        const playerBubble = this.player.getData('chatBubble');
+        
+        // Only check if both bubbles are active and visible
+        if (!playerBubble || !playerBubble.active || !this.chatBubble || !this.chatBubble.active || !this.chatBubble.visible) {
+            // Reset alpha if no overlap check needed
+            if (playerBubble && playerBubble.active) {
+                playerBubble.setAlpha(1);
+            }
+            if (this.chatBubble && this.chatBubble.active) {
+                this.chatBubble.setAlpha(1);
+            }
+            return;
+        }
+
+        // Calculate distance between bubbles
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            this.npc.x, this.npc.y
+        );
+
+        // If characters are close (within 100 pixels), bubbles might overlap
+        if (distance < 100) {
+            // Make NPC bubble transparent so player bubble is always fully visible
+            playerBubble.setAlpha(1);
+            this.chatBubble.setAlpha(0.7);
+        } else {
+            // No overlap, restore full opacity
+            playerBubble.setAlpha(1);
+            this.chatBubble.setAlpha(1);
         }
     }
 
@@ -571,6 +769,8 @@ export class FarmScene extends Scene {
 
         createLayer('Ground', -10);
         this.farmingLayer = createLayer('Farming Dirt + Water + Routes', -5)!;
+
+        // Create crops layer for backward compatibility (kept for any existing code)
         this.cropsLayer = this.map.createBlankLayer('Crops', this.tileset, 0, 0)!;
         this.cropsLayer.setDepth(-4);
 
@@ -1275,12 +1475,22 @@ export class FarmScene extends Scene {
     }
 
     private createChickens(): void {
-        // Spawn 5-6 chickens in the first fence (top-left enclosure)
-        // Fence area: x: 16-112 (tiles 1-7), y: 144-240 (tiles 9-15)
-        const chickenCount = Phaser.Math.Between(6, 8);
+        // Spawn chickens in left animalground areas (columns 1-7, rows 10-15 and 17-22)
+        const chickenCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < chickenCount; i++) {
-            const x = Phaser.Math.Between(32, 96);
-            const y = Phaser.Math.Between(160, 224);
+            let x, y;
+
+            // Distribute between upper and lower left pens
+            if (i < chickenCount / 2) {
+                // Upper pen: rows 10-15 with 1-tile padding
+                x = Phaser.Math.Between(32, 96);    // columns 2-6 (1-tile padding from edges)
+                y = Phaser.Math.Between(176, 224); // rows 11-14 (1-tile padding from edges)
+            } else {
+                // Lower pen: rows 17-22 with 1-tile padding
+                x = Phaser.Math.Between(32, 96);    // columns 2-6 (1-tile padding from edges)
+                y = Phaser.Math.Between(288, 336); // rows 18-21 (1-tile padding from edges)
+            }
 
             const chicken = this.physics.add.sprite(x, y, 'chicken', 0);
             chicken.setScale(1.5);
@@ -1290,7 +1500,7 @@ export class FarmScene extends Scene {
             // Add health data to chicken
             chicken.setData('health', 3);
             chicken.setData('maxHealth', 3);
-            chicken.setData('fenceBounds', { minX: 32, maxX: 96, minY: 160, maxY: 224 });
+            chicken.setData('fenceBounds', { minX: 32, maxX: 96, minY: 176, maxY: 336 });
 
             // Store chicken in array
             this.chickens.push(chicken);
@@ -1308,12 +1518,22 @@ export class FarmScene extends Scene {
     }
 
     private createCows(): void {
-        // Spawn 5-6 cows in the second fence (top-middle enclosure)
-        // Fence area: x: 144-240 (tiles 9-15), y: 144-240 (tiles 9-15)
-        const cowCount = Phaser.Math.Between(6, 8);
+        // Spawn cows in middle animalground areas (columns 9-15, rows 10-15 and 17-22)
+        const cowCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < cowCount; i++) {
-            const x = Phaser.Math.Between(160, 224);
-            const y = Phaser.Math.Between(160, 224);
+            let x, y;
+
+            // Distribute between upper and lower middle pens
+            if (i < cowCount / 2) {
+                // Upper pen: rows 10-15 with 1-tile padding
+                x = Phaser.Math.Between(160, 224); // columns 10-14 (1-tile padding from edges)
+                y = Phaser.Math.Between(176, 224); // rows 11-14 (1-tile padding from edges)
+            } else {
+                // Lower pen: rows 17-22 with 1-tile padding
+                x = Phaser.Math.Between(160, 224); // columns 10-14 (1-tile padding from edges)
+                y = Phaser.Math.Between(288, 336); // rows 18-21 (1-tile padding from edges)
+            }
 
             const cow = this.physics.add.sprite(x, y, 'cow', 0);
             cow.setScale(1.5);
@@ -1323,7 +1543,7 @@ export class FarmScene extends Scene {
             // Add health data to cow
             cow.setData('health', 5);
             cow.setData('maxHealth', 5);
-            cow.setData('fenceBounds', { minX: 160, maxX: 224, minY: 160, maxY: 224 });
+            cow.setData('fenceBounds', { minX: 160, maxX: 224, minY: 176, maxY: 336 });
 
             // Store cow in array
             this.cows.push(cow);
@@ -1340,22 +1560,49 @@ export class FarmScene extends Scene {
     }
 
     private createSheep(): void {
-        // Spawn 5-6 sheep in the third fence (top-left lower enclosure)
-        // Fence area: x: 16-112 (tiles 1-7), y: 256-320 (tiles 16-20)
-        const sheepCount = Phaser.Math.Between(6, 8);
+        // Since chickens already use left pens and cows use middle pens,
+        // distribute sheep across both left and middle pens as well
+        const sheepCount = Phaser.Math.Between(12, 16);
+
         for (let i = 0; i < sheepCount; i++) {
-            const x = Phaser.Math.Between(32, 96);
-            const y = Phaser.Math.Between(272, 304);
+            let x = 200; // Default position
+            let y = 200; // Default position
+
+            // Distribute across all 4 pens
+            const penType = i % 4;
+
+            switch (penType) {
+                case 0: // Upper left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);    // columns 2-6
+                    y = Phaser.Math.Between(176, 224); // rows 11-14
+                    break;
+                case 1: // Lower left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);    // columns 2-6
+                    y = Phaser.Math.Between(288, 336); // rows 18-21
+                    break;
+                case 2: // Upper middle pen with 1-tile padding
+                    x = Phaser.Math.Between(160, 224); // columns 10-14
+                    y = Phaser.Math.Between(176, 224); // rows 11-14
+                    break;
+                case 3: // Lower middle pen with 1-tile padding
+                    x = Phaser.Math.Between(160, 224); // columns 10-14
+                    y = Phaser.Math.Between(288, 336); // rows 18-21
+                    break;
+                default: // Fallback to upper left pen with 1-tile padding
+                    x = Phaser.Math.Between(32, 96);
+                    y = Phaser.Math.Between(176, 224);
+                    break;
+            }
 
             const sheep = this.physics.add.sprite(x, y, 'sheep', 0);
             sheep.setScale(1.5);
             sheep.play('sheep-idle');
             sheep.setDepth(100);
 
-            // Add health data to sheep
+            // Add health data to sheep with larger bounds to cover all pens (with padding)
             sheep.setData('health', 3);
             sheep.setData('maxHealth', 3);
-            sheep.setData('fenceBounds', { minX: 32, maxX: 96, minY: 272, maxY: 304 });
+            sheep.setData('fenceBounds', { minX: 32, maxX: 224, minY: 176, maxY: 336 });
 
             // Store sheep in array
             this.sheep.push(sheep);
@@ -1695,26 +1942,25 @@ export class FarmScene extends Scene {
         this.attackKey = this.input.keyboard!.addKey('Q');
         this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.cutKey = this.input.keyboard!.addKey('R');
+        this.harvestKey = this.input.keyboard!.addKey('H');
+        this.collectKey = this.input.keyboard!.addKey('C');
+        this.marketplaceKey = this.input.keyboard!.addKey('M');
 
         this.escKey.on('down', () => {
             if (this.isChatting) {
                 this.endChat();
-            } else {
-                // Check if any UI is open before allowing exit
-                const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
-                if (uiScene && (uiScene.isMarketplaceOpen() || uiScene.isBackpackOpen())) {
-                    // Don't exit, let UIScene handle ESC
-                    return;
-                }
-                this.exitFarm();
             }
+            // ESC key now only handles closing chat - UI modals are handled by UIScene
+            // Exit to menu is handled by a dedicated button
         });
 
         this.spaceKey.on('down', () => this.tryStartChat());
         this.cutKey.on('down', () => this.tryCutTree());
-        this.waterKey = this.input.keyboard!.addKey('T');
+        this.harvestKey.on('down', () => this.tryHarvestCrop());
+        this.collectKey.on('down', () => this.tryCollectCarrots());
+        this.marketplaceKey.on('down', () => this.openMarketplace());
+       this.waterKey = this.input.keyboard!.addKey('T');
         this.waterKey.on('down', () => this.tryWater());
-
         // Listen for keyboard input for chat
         this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
             if (this.isChatting) {
@@ -1872,6 +2118,10 @@ export class FarmScene extends Scene {
         const damage = enemySprite.getDamage();
         this.playerCurrentHp -= damage;
         this.lastDamageTime = currentTime;
+        
+        // Update React HUD
+        this.hudBridge.setHealth(this.playerCurrentHp);
+        this.hudBridge.notifyWarning('Damage Taken', `-${damage} HP`, 2000);
 
         // Flash player red
         this.player.setTint(0xff0000);
@@ -1944,17 +2194,237 @@ export class FarmScene extends Scene {
             for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
                 for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
                     const targetTile = this.farmingLayer.getTileAt(x, y);
-                    const cropTile = this.cropsLayer.getTileAt(x, y);
+                    const existingCrop = this.crops.get(`${x},${y}`);
 
-                    // Check if the tile is tilled soil and has no crop on it
-                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && (!cropTile || cropTile.index === -1)) {
-                        // Plant a crop and immediately stop searching
-                        this.cropsLayer.putTileAt(1774, x, y);
+                    // Check if the tile is tilled soil and has no crop sprite
+                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && !existingCrop) {
+                        // Plant a carrot crop and immediately stop searching
+                        this.plantCarrot(x, y);
                         return;
                     }
                 }
             }
         });
+    }
+
+    private setupTransactionNotifications(): void {
+        // Listen for NPC trade completion
+        EventBus.on('npc-trade-completed', this.handleNPCTradeCompletedNotification.bind(this));
+
+        // Listen for transaction details requests (to potentially show in-game hints)
+        EventBus.on('show-transaction-details', this.handleTransactionDetailsRequest.bind(this));
+    }
+
+    private handleNPCTradeCompletedNotification(transaction: import('../../types/onechain').TransactionDetails): void {
+        const itemCount = transaction.itemsTraded.playerItems.length + transaction.itemsTraded.npcItems.length;
+        const message = `✅ Trade with Herman completed! ${itemCount} items exchanged`;
+
+        this.showTransactionNotification(message, 'success', 3000);
+    }
+
+    private handleTransactionDetailsRequest(transaction: import('../../types/onechain').TransactionDetails): void {
+        // Could show a subtle in-game hint or notification
+        const message = `📄 Transaction details available: ${transaction.transactionHash.substring(0, 10)}...`;
+        this.showTransactionNotification(message, 'info', 2000);
+    }
+
+    private showTransactionNotification(message: string, type: 'success' | 'info' | 'warning', duration: number): void {
+        // Add to queue
+        this.transactionNotificationQueue.push({
+            message,
+            type,
+            duration
+        });
+
+        // Process queue if not already showing
+        if (!this.isShowingNotification) {
+            this.processNotificationQueue();
+        }
+    }
+
+    private processNotificationQueue(): void {
+        if (this.transactionNotificationQueue.length === 0) {
+            this.isShowingNotification = false;
+            return;
+        }
+
+        this.isShowingNotification = true;
+        const notification = this.transactionNotificationQueue.shift()!;
+        const { message, type, duration } = notification;
+
+        // Create notification container
+        this.notificationContainer = this.add.container(
+            this.cameras.main.width / 2,
+            100 // Position at top of screen
+        );
+        this.notificationContainer.setScrollFactor(0);
+        this.notificationContainer.setDepth(30000);
+
+        // Create background
+        this.currentNotificationBackground = this.add.graphics();
+        this.currentNotificationBackground.fillStyle(0x1a1a1a, 0.9);
+        this.currentNotificationBackground.fillRoundedRect(-200, -25, 400, 50, 8);
+
+        // Add colored border based on type
+        const borderColor = type === 'success' ? 0x10b981 : type === 'warning' ? 0xf59e0b : 0x3b82f6;
+        this.currentNotificationBackground.lineStyle(3, borderColor, 1);
+        this.currentNotificationBackground.strokeRoundedRect(-200, -25, 400, 50, 8);
+
+        this.notificationContainer.add(this.currentNotificationBackground);
+
+        // Create text
+        this.currentNotificationText = this.add.text(0, 0, message, {
+            fontSize: '16px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            align: 'center',
+            wordWrap: { width: 350 }
+        });
+        this.currentNotificationText.setOrigin(0.5);
+        this.notificationContainer.add(this.currentNotificationText);
+
+        // Animate in
+        this.notificationContainer.setAlpha(0);
+        this.notificationContainer.setY(50);
+
+        this.tweens.add({
+            targets: this.notificationContainer,
+            alpha: 1,
+            y: 100,
+            duration: 300,
+            ease: 'Power2',
+            onComplete: () => {
+                // Wait for duration, then animate out
+                this.time.delayedCall(duration, () => {
+                    this.tweens.add({
+                        targets: this.notificationContainer,
+                        alpha: 0,
+                        y: 50,
+                        duration: 300,
+                        ease: 'Power2',
+                        onComplete: () => {
+                            // Clean up
+                            if (this.notificationContainer) {
+                                this.notificationContainer.destroy();
+                                this.notificationContainer = undefined;
+                                this.currentNotificationBackground = undefined;
+                                this.currentNotificationText = undefined;
+                            }
+
+                            // Process next notification
+                            this.processNotificationQueue();
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    private plantCarrot(tileX: number, tileY: number): void {
+        const cropKey = `${tileX},${tileY}`;
+
+        // Create the crop object
+        const crop: Crop = {
+            x: tileX,
+            y: tileY,
+            growthStage: 0,
+            type: 'carrot',
+            plantedTime: this.time.now
+        };
+
+        // Store the crop
+        this.crops.set(cropKey, crop);
+
+        // Calculate world position (tile center + half tile offset)
+        const worldX = tileX * 16 + 8;
+        const worldY = tileY * 16 + 8;
+
+        // Create initial seed sprite (stage 0) using carrot stage 1 sprite
+        console.log('Creating carrot seed sprite with key: carrot_stage1, exists:', this.textures.exists('carrot_stage1'));
+        const seedSprite = this.add.sprite(worldX, worldY, 'carrot_stage1');
+        seedSprite.setOrigin(0.5, 1); // Center bottom
+        seedSprite.setDepth(tileY); // Z-order based on row position, same level as tiles
+
+        // No wind effect on seed stage
+
+        // Store sprite for this crop
+        this.cropSprites.set(cropKey, [seedSprite]);
+
+        // Start growth timer for stage 1 (after 5 seconds)
+        const growthTimer1 = this.time.delayedCall(5000, () => {
+            this.growCarrot(cropKey, 1);
+        });
+
+        this.cropGrowthTimers.set(cropKey + '_stage1', growthTimer1);
+    }
+
+    private growCarrot(cropKey: string, newStage: number): void {
+        const crop = this.crops.get(cropKey);
+        if (!crop) return;
+
+        const existingSprites = this.cropSprites.get(cropKey);
+        if (!existingSprites) return;
+
+        crop.growthStage = newStage;
+
+        // Clean up existing wind effect tweens
+        const existingTweens = this.windEffectTweens.get(cropKey);
+        if (existingTweens) {
+            existingTweens.forEach(tween => {
+                if (tween && tween.isPlaying()) {
+                    tween.remove();
+                }
+            });
+            this.windEffectTweens.delete(cropKey);
+        }
+
+        // Remove existing sprites and text
+        existingSprites.forEach(obj => {
+            if (obj && obj.active) {
+                obj.destroy();
+            }
+        });
+
+        // Calculate world positions for new sprites
+        const worldX = crop.x * 16 + 8;
+        const worldY = crop.y * 16 + 8;
+
+        const newSprites: Phaser.GameObjects.GameObject[] = [];
+
+        switch (newStage) {
+            case 1:
+                // Growing stage (5 seconds): use carrot stage 2 sprite
+                const growingSprite = this.add.sprite(worldX, worldY, 'carrot_stage2');
+                growingSprite.setOrigin(0.5, 1); // Center bottom
+                growingSprite.setDepth(crop.y); // Same level as tiles
+
+                // Apply wind effect to growing crop
+                this.applyWindEffect(growingSprite, cropKey);
+
+                newSprites.push(growingSprite);
+
+                // Start timer for stage 2 (after another 5 seconds)
+                const growthTimer2 = this.time.delayedCall(5000, () => {
+                    this.growCarrot(cropKey, 2);
+                });
+                this.cropGrowthTimers.set(cropKey + '_stage2', growthTimer2);
+                break;
+
+            case 2:
+                // Fully grown stage (10 seconds total): use carrot stage 3 sprite
+                const matureSprite = this.add.sprite(worldX, worldY, 'carrot_stage3');
+                matureSprite.setOrigin(0.5, 1); // Center bottom
+                matureSprite.setDepth(crop.y); // Same level as tiles
+
+                // Apply wind effect to mature crop
+                this.applyWindEffect(matureSprite, cropKey);
+
+                newSprites.push(matureSprite);
+                break;
+        }
+
+        // Store new sprites
+        this.cropSprites.set(cropKey, newSprites);
     }
 
     private updatePlayerAnimation(isRunning: boolean): void {
@@ -1991,6 +2461,9 @@ export class FarmScene extends Scene {
         }
 
         this.isAttacking = true;
+
+        // Add screen shake effect
+        this.cameras.main.shake(120, 0.002);
 
         // Check for chickens in attack range
         this.checkAttackHit();
@@ -2100,6 +2573,7 @@ export class FarmScene extends Scene {
     private onAttackComplete(): void {
         // If Q is still being held, play the attack animation again (loop)
         if (this.attackKey.isDown) {
+            this.cameras.main.shake(120, 0.002);
             // Check for hits on each attack cycle
             this.checkAttackHit();
             const attackAnim = `attack-${this.currentDirection}`;
@@ -2315,64 +2789,132 @@ export class FarmScene extends Scene {
     }
 
     private createChatBubble(): void {
-        const bubbleWidth = 100;
-        const bubbleHeight = 30;
-        const bubblePadding = 6;
-
         // Create chatbox indicator image beside player's head (closer to character)
         const chatboxIndicator = this.add.image(this.player.x + 5, this.player.y - 5, 'chatbox');
         chatboxIndicator.setScale(0.25); // Small indicator
         chatboxIndicator.setDepth(2000);
         this.player.setData('chatboxIndicator', chatboxIndicator);
 
-        // Create player's chat bubble with chatdialog image
-        const playerBubble = this.add.container(this.player.x, this.player.y - 5);
+        // Create player's chat bubble with modern rounded design
+        const playerBubble = this.add.container(this.player.x, this.player.y - 35);
         playerBubble.setDepth(2000);
 
-        // Add chatdialog image
-        const chatDialogImage = this.add.image(0, -20, 'chatdialog');
-        chatDialogImage.setScale(0.15); // Scale down from 905x276
+        // Create player bubble background (will be drawn after text is set)
+        const playerBubbleGraphics = this.add.graphics();
+        playerBubbleGraphics.setName('playerBubbleBackground');
 
         this.chatText = this.add.text(
             0,
-            -20,
+            0,
             '',
             {
-                fontSize: '10px',
-                color: '#000000',
-                wordWrap: { width: 120 },
-                resolution: 3
+                fontSize: '11px',
+                color: '#2c3e50',
+                fontFamily: 'Arial, sans-serif',
+                wordWrap: { width: 140 },
+                resolution: 3,
+                align: 'center'
             }
         );
         this.chatText.setOrigin(0.5, 0.5);
 
-        playerBubble.add([chatDialogImage, this.chatText]);
+        playerBubble.add([playerBubbleGraphics, this.chatText]);
         this.player.setData('chatBubble', playerBubble);
 
-        // Create NPC's chat bubble (hidden initially)
+        // Create NPC's chat bubble (hidden initially) with modern rounded design
         this.chatBubble = this.add.container(this.npc.x, this.npc.y - 50);
         this.chatBubble.setDepth(2000);
         this.chatBubble.setVisible(false);
 
-        // Add chatdialog image for NPC
-        const npcDialogImage = this.add.image(0, -20, 'chatdialog');
-        npcDialogImage.setScale(0.15); // Scale down from 905x276
+        // Create NPC bubble background
+        const npcBubbleGraphics = this.add.graphics();
+        npcBubbleGraphics.setName('npcBubbleBackground');
 
         this.npcResponse = this.add.text(
             0,
-            -20,
+            0,
             'Deal!',
             {
-                fontSize: '10px',
-                color: '#000000',
+                fontSize: '11px',
+                color: '#2c3e50',
+                fontFamily: 'Arial, sans-serif',
                 fontStyle: 'bold',
-                wordWrap: { width: 120 },
-                resolution: 3
+                wordWrap: { width: 160 },
+                resolution: 3,
+                align: 'center'
             }
         );
         this.npcResponse.setOrigin(0.5, 0.5);
 
-        this.chatBubble.add([npcDialogImage, this.npcResponse]);
+        this.chatBubble.add([npcBubbleGraphics, this.npcResponse]);
+        
+        // Draw initial NPC bubble
+        this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
+    }
+
+    private updateChatBubbleBackground(container: Phaser.GameObjects.Container, textObj: Phaser.GameObjects.Text, isPlayer: boolean): void {
+        const graphics = container.getByName(isPlayer ? 'playerBubbleBackground' : 'npcBubbleBackground') as Phaser.GameObjects.Graphics;
+        if (!graphics) return;
+
+        const padding = 12;
+        
+        // Force text to update its bounds
+        textObj.updateText();
+        
+        // Get actual text dimensions
+        const textWidth = textObj.width;
+        const textHeight = textObj.height;
+        
+        const bubbleWidth = Math.max(70, textWidth + padding * 2);
+        const bubbleHeight = Math.max(35, textHeight + padding * 2);
+
+        graphics.clear();
+        
+        // Soft shadow
+        graphics.fillStyle(0x000000, 0.15);
+        graphics.fillRect(
+            -bubbleWidth / 2 + 2,
+            -bubbleHeight / 2 + 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Main bubble background
+        graphics.fillStyle(0xffffff, 1);
+        graphics.fillRect(
+            -bubbleWidth / 2,
+            -bubbleHeight / 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Border
+        graphics.lineStyle(2, 0xe0e0e0, 1);
+        graphics.strokeRect(
+            -bubbleWidth / 2,
+            -bubbleHeight / 2,
+            bubbleWidth,
+            bubbleHeight
+        );
+
+        // Bubble tail (small triangle pointing to character)
+        const tailSize = 8;
+        const tailY = bubbleHeight / 2;
+        
+        graphics.fillStyle(0xffffff, 1);
+        graphics.fillTriangle(
+            -tailSize / 2, tailY,
+            tailSize / 2, tailY,
+            0, tailY + tailSize
+        );
+        
+        // Tail border
+        graphics.lineStyle(2, 0xe0e0e0, 1);
+        graphics.strokeTriangle(
+            -tailSize / 2, tailY,
+            tailSize / 2, tailY,
+            0, tailY + tailSize
+        );
     }
 
     private handleChatInput(event: KeyboardEvent): void {
@@ -2395,14 +2937,27 @@ export class FarmScene extends Scene {
     private updateChatText(): void {
         if (this.chatText) {
             this.chatText.setText(this.playerInput + '|');
+            // Update player bubble background to fit new text
+            const playerBubble = this.player.getData('chatBubble');
+            if (playerBubble) {
+                this.updateChatBubbleBackground(playerBubble, this.chatText, true);
+            }
         }
     }
 
-    private sendMessage(): void {
+    private async sendMessage(): Promise<void> {
         if (this.playerInput.trim().length === 0) return;
 
+        const userMessage = this.playerInput.trim();
+
         // Show the final message in player's bubble
-        this.chatText.setText(this.playerInput);
+        this.chatText.setText(userMessage);
+        
+        // Update player bubble background for final message
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble) {
+            this.updateChatBubbleBackground(playerBubble, this.chatText, true);
+        }
 
         // Hide chatbox indicator (stop showing typing icon)
         const chatboxIndicator = this.player.getData('chatboxIndicator');
@@ -2413,14 +2968,35 @@ export class FarmScene extends Scene {
         // Allow player to move again
         this.isChatting = false;
 
-        // NPC responds with "Deal!"
-        this.time.delayedCall(500, () => {
+        // Show NPC is "thinking" with typing indicator
+        this.time.delayedCall(500, async () => {
             this.chatBubble.setVisible(true);
+            this.npcResponse.setText('...');
+            this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
 
-            // Close chat after showing response (this will hide both bubbles)
-            this.time.delayedCall(2000, () => {
-                this.endChat();
-            });
+            try {
+                // Get AI response from OpenRouter
+                const aiResponse = await this.openRouterService.sendMessage(userMessage);
+                
+                // Update NPC response text
+                this.npcResponse.setText(aiResponse);
+                
+                // Update NPC bubble background to fit response
+                this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
+
+                // Close chat after showing response
+                this.time.delayedCall(5000, () => {
+                    this.endChat();
+                });
+            } catch (error) {
+                console.error('Error getting AI response:', error);
+                this.npcResponse.setText('Hmm, let me think about that...');
+                this.updateChatBubbleBackground(this.chatBubble, this.npcResponse, false);
+                
+                this.time.delayedCall(3000, () => {
+                    this.endChat();
+                });
+            }
         });
     }
 
@@ -2428,28 +3004,33 @@ export class FarmScene extends Scene {
         this.isChatting = false;
         this.playerInput = '';
 
-        // Destroy chatbox indicator
+        // Hide and destroy chatbox indicator
         const chatboxIndicator = this.player.getData('chatboxIndicator');
-        if (chatboxIndicator) {
+        if (chatboxIndicator && chatboxIndicator.active) {
+            chatboxIndicator.setVisible(false);
             chatboxIndicator.destroy();
             this.player.setData('chatboxIndicator', null);
         }
 
-        // Destroy player chat bubble
+        // Hide and destroy player chat bubble
         const playerBubble = this.player.getData('chatBubble');
-        if (playerBubble) {
+        if (playerBubble && playerBubble.active) {
+            playerBubble.setVisible(false);
             playerBubble.destroy();
             this.player.setData('chatBubble', null);
         }
 
-        // Destroy NPC chat bubble
-        if (this.chatBubble) {
+        // Hide and destroy NPC chat bubble
+        if (this.chatBubble && this.chatBubble.active) {
+            this.chatBubble.setVisible(false);
             this.chatBubble.destroy();
         }
 
         // Resume NPC patrol only after everything is cleaned up
         this.time.delayedCall(100, () => {
-            this.npc.setData('patrolPaused', false);
+            if (this.npc && this.npc.active) {
+                this.npc.setData('patrolPaused', false);
+            }
         });
     }
 
@@ -2469,29 +3050,742 @@ export class FarmScene extends Scene {
         });
     }
 
+    private tryHarvestCrop(): void {
+        if (this.isHarvesting || this.isChatting || this.isCutting) return;
+
+        const playerTileX = Math.floor(this.player.x / 16);
+        const playerTileY = Math.floor(this.player.y / 16);
+        const radius = 2;
+
+        // Find nearest mature carrot
+        for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
+            for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
+                const cropKey = `${x},${y}`;
+                const crop = this.crops.get(cropKey);
+
+                if (crop && crop.growthStage === 2) {
+                    this.harvestCarrot(cropKey, crop);
+                    return;
+                }
+            }
+        }
+        
+        // No mature carrots found nearby - show feedback
+        this.showHarvestFeedback('No mature carrots nearby!');
+    }
+
+    private harvestCarrot(cropKey: string, crop: Crop): void {
+        this.isHarvesting = true;
+
+        // Get crop sprites and remove them
+        const sprites = this.cropSprites.get(cropKey);
+        if (sprites) {
+            sprites.forEach(sprite => {
+                if (sprite && sprite.active) {
+                    sprite.destroy();
+                }
+            });
+            this.cropSprites.delete(cropKey);
+        }
+
+        // Clean up wind effects
+        const tweens = this.windEffectTweens.get(cropKey);
+        if (tweens) {
+            tweens.forEach(tween => {
+                if (tween && tween.isPlaying()) {
+                    tween.remove();
+                }
+            });
+            this.windEffectTweens.delete(cropKey);
+        }
+
+        // Clean up timers
+        const timer1 = this.cropGrowthTimers.get(cropKey + '_stage1');
+        const timer2 = this.cropGrowthTimers.get(cropKey + '_stage2');
+        if (timer1) timer1.destroy();
+        if (timer2) timer2.destroy();
+        this.cropGrowthTimers.delete(cropKey + '_stage1');
+        this.cropGrowthTimers.delete(cropKey + '_stage2');
+
+        // Remove crop from map
+        this.crops.delete(cropKey);
+
+        // Create floating dropped carrot
+        const worldX = crop.x * 16 + 8 + Phaser.Math.Between(-4, 4);
+        const worldY = crop.y * 16 + 8 + Phaser.Math.Between(-4, 4);
+        
+        const droppedCarrot = this.add.sprite(worldX, worldY, 'carrot_stage3');
+        droppedCarrot.setScale(0.6);
+        droppedCarrot.setOrigin(0.5, 1);
+        droppedCarrot.setDepth(crop.y + 100);
+        droppedCarrot.setData('spawnTime', this.time.now);
+        droppedCarrot.setData('baseY', worldY);
+        
+        // Add glowing effect only
+        droppedCarrot.setTint(0xffff99); // Slight yellow tint
+        droppedCarrot.preFX?.addGlow(0xffd700, 4, 0, false, 0.3, 8); // Gold glow
+
+        // Store dropped carrot
+        const dropKey = `drop_${Date.now()}_${Math.random()}`;
+        this.droppedCarrots.set(dropKey, droppedCarrot);
+        this.harvestedCarrotCount++;
+        
+        // Notify HUD of harvest
+        this.hudBridge.onCropHarvested('Carrot', 1);
+
+        // Auto-mint carrot as NFT (lazy minting - background process)
+        const autoMint = AutoMintService.getInstance();
+        const carrotItemId = `carrot_${crop.x}_${crop.y}_${Date.now()}`;
+        autoMint.autoMintItem({
+            id: carrotItemId,
+            name: 'Carrot',
+            description: 'Freshly harvested carrot from OneValley farm',
+            type: 'consumable',
+            rarity: 1, // Common rarity
+            stats: [5, 10], // Small health boost
+        });
+        droppedCarrot.setData('gameItemId', carrotItemId);
+
+        // Play harvest animation - small pop up
+        this.tweens.add({
+            targets: droppedCarrot,
+            y: worldY - 10,
+            scale: 0.8,
+            duration: 200,
+            ease: 'Back.easeOut',
+            yoyo: false
+        });
+
+        // Reset harvesting state
+        this.time.delayedCall(300, () => {
+            this.isHarvesting = false;
+        });
+    }
+
+    private showHarvestFeedback(message: string): void {
+        // Create floating feedback text near the player
+        const headOffset = this.player.displayHeight ? this.player.displayHeight * 0.75 : 48;
+        const startY = this.player.y - headOffset;
+        const endY = startY - 20;
+
+        const feedbackText = this.add.text(
+            this.player.x,
+            startY,
+            message,
+            {
+                fontSize: '18px',
+                color: '#ff6b6b',
+                fontStyle: 'bold',
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                padding: { x: 10, y: 5 }
+            }
+        );
+        feedbackText.setOrigin(0.5, 1);
+        feedbackText.setScrollFactor(1);
+        feedbackText.setDepth(this.player.depth + 5);
+
+        const followEvent = this.time.addEvent({
+            delay: 16,
+            callback: () => {
+                if (!feedbackText.active) {
+                    followEvent.remove(false);
+                    return;
+                }
+                feedbackText.setX(this.player.x);
+            },
+            loop: true
+        });
+
+        this.tweens.add({
+            targets: feedbackText,
+            y: endY,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power2',
+            onComplete: () => {
+                followEvent.remove(false);
+                feedbackText.destroy();
+            }
+        });
+    }
+
+    private updateFloatingCarrots(): void {
+        const currentTime = this.time.now;
+        
+        this.droppedCarrots.forEach((carrot, key) => {
+            const spawnTime = carrot.getData('spawnTime');
+            const baseY = carrot.getData('baseY');
+            const elapsed = currentTime - spawnTime;
+            
+            // Floating animation
+            const floatOffset = Math.sin(elapsed / 500) * 3;
+            const newY = baseY - 10 + floatOffset;
+            carrot.setY(newY);
+        });
+    }
+
+    private createCollectButton(): void {
+        // Create container for button
+        this.collectButton = this.add.container(0, 0);
+        this.collectButton.setScrollFactor(0);
+        this.collectButton.setDepth(3500);
+        this.collectButton.setVisible(false);
+
+        // Background
+        const bg = this.add.graphics();
+        bg.fillStyle(0x4a7c59, 0.9);
+        bg.fillRoundedRect(-100, -20, 200, 40, 8);
+        bg.lineStyle(2, 0xffffff, 0.8);
+        bg.strokeRoundedRect(-100, -20, 200, 40, 8);
+
+        // Button text
+        this.collectButtonText = this.add.text(0, 0, 'Collect All (C)', {
+            fontSize: '16px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        });
+        this.collectButtonText.setOrigin(0.5);
+
+        this.collectButton.add([bg, this.collectButtonText]);
+
+        // Make interactive
+        const hitArea = new Phaser.Geom.Rectangle(-100, -20, 200, 40);
+        this.collectButton.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+        
+        this.collectButton.on('pointerdown', () => {
+            this.tryCollectCarrots();
+        });
+
+        this.collectButton.on('pointerover', () => {
+            bg.clear();
+            bg.fillStyle(0x5a8c69, 0.95);
+            bg.fillRoundedRect(-100, -20, 200, 40, 8);
+            bg.lineStyle(2, 0xffffff, 1);
+            bg.strokeRoundedRect(-100, -20, 200, 40, 8);
+        });
+
+        this.collectButton.on('pointerout', () => {
+            bg.clear();
+            bg.fillStyle(0x4a7c59, 0.9);
+            bg.fillRoundedRect(-100, -20, 200, 40, 8);
+            bg.lineStyle(2, 0xffffff, 0.8);
+            bg.strokeRoundedRect(-100, -20, 200, 40, 8);
+        });
+    }
+
+    private createMintModal(): void {
+        if (this.mintModalCreated) return;
+        this.mintModalCreated = true;
+
+        // Create mint modal container (centered on screen)
+        this.mintModalContainer = this.add.container(0, 0);
+        this.mintModalContainer.setScrollFactor(0);
+        this.mintModalContainer.setDepth(20000); // Above other UI elements
+        this.mintModalContainer.setVisible(false);
+
+        // Add dark overlay (following transaction details modal pattern)
+        this.mintModalOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width * 2,
+            this.cameras.main.height * 2,
+            0x0a0a0a,
+            0.8
+        );
+        this.mintModalOverlay.setOrigin(0.5);
+        this.mintModalOverlay.setScrollFactor(0);
+        this.mintModalOverlay.setDepth(50);
+        this.mintModalContainer.add(this.mintModalOverlay);
+
+        // Modal dimensions and styling (make it very small)
+        const modalWidth = 300; // Very small width
+        const modalHeight = 200; // Very small height
+        const padding = 15; // Smaller padding for compact modal
+        const titleHeight = 40; // Smaller title height
+        const closeButtonSize = 30; // Smaller close button
+
+        // Create modal background
+        const modalBg = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            modalWidth,
+            modalHeight,
+            0x2c3e50,
+            0.98
+        );
+        modalBg.setStrokeStyle(3, 0x3498db);
+        modalBg.setOrigin(0.5);
+        modalBg.setScrollFactor(0);
+        modalBg.setDepth(100);
+        this.mintModalContainer.add(modalBg);
+
+        // Add inner border for depth
+        const innerBorder = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            modalWidth - 8,
+            modalHeight - 8,
+            0x34495e,
+            0.4
+        );
+        innerBorder.setStrokeStyle(1, 0x5dade2);
+        innerBorder.setOrigin(0.5);
+        innerBorder.setScrollFactor(0);
+        innerBorder.setDepth(101);
+        this.mintModalContainer.add(innerBorder);
+
+        // Add decorative top border
+        const topBorder = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            modalWidth - 40,
+            4,
+            0x2ecc71
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
+        this.mintModalContainer.add(topBorder);
+
+        // Title background panel
+        const titlePanel = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            modalWidth - 40,
+            titleHeight,
+            0x34495e,
+            0.95
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(102);
+        titlePanel.setStrokeStyle(2, 0x5dade2);
+        this.mintModalContainer.add(titlePanel);
+
+        // Title with emoji and styling
+        const title = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - (modalHeight/5) + titleHeight/2,
+            '🥕 MINT CARROTS ON-CHAIN',
+            {
+                fontSize: '22px',
+                fontFamily: 'Arial, sans-serif',
+                color: '#2ecc71',
+                fontStyle: 'bold',
+                shadow: {
+                    offsetX: 0,
+                    offsetY: 2,
+                    color: '#000000',
+                    blur: 4,
+                    stroke: true,
+                    fill: true
+                }
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
+        this.mintModalContainer.add(title);
+
+        // Close button with improved styling
+        const closeBtnX = this.cameras.main.centerX + (modalWidth/2) - padding - closeButtonSize/2;
+        const closeBtnY = this.cameras.main.centerY - (modalHeight/2) + titleHeight/2;
+
+        const closeBtnBg = this.add.circle(
+            closeBtnX,
+            closeBtnY,
+            closeButtonSize/2,
+            0xe74c3c,
+            0.9
+        ).setInteractive().setScrollFactor(0).setDepth(104);
+        closeBtnBg.setStrokeStyle(2, 0xc0392b);
+        this.mintModalContainer.add(closeBtnBg);
+
+        const closeBtn = this.add.text(
+            closeBtnX,
+            closeBtnY,
+            '✕',
+            {
+                fontSize: '20px',
+                fontFamily: 'Arial, sans-serif',
+                color: '#ffffff',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(105);
+        this.mintModalContainer.add(closeBtn);
+
+        // Close button interactions
+        [closeBtnBg, closeBtn].forEach(element => {
+            element.on('pointerover', () => {
+                closeBtnBg.setFillStyle(0xf39c12);
+                closeBtnBg.setScale(1.1);
+                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+            });
+
+            element.on('pointerout', () => {
+                closeBtnBg.setFillStyle(0xe74c3c);
+                closeBtnBg.setScale(1);
+                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+            });
+
+            element.on('pointerdown', () => {
+                this.hideMintModal();
+            });
+        });
+
+        // Store close button reference
+        this.mintModalCloseButton = closeBtn;
+
+        // Create content panels
+        this.createMintModalContent(modalWidth, modalHeight, padding, titleHeight);
+    }
+
+    private createMintModalContent(modalWidth: number, modalHeight: number, padding: number, titleHeight: number): void {
+        // Carrot icon (smaller and compact)
+        const carrotIcon = this.add.sprite(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 40,
+            'carrot_stage3'
+        );
+        carrotIcon.setScale(0.8); // Smaller for compact modal
+        carrotIcon.setScrollFactor(0);
+        carrotIcon.setDepth(103);
+        this.mintModalContainer.add(carrotIcon);
+
+        // Count text (compact for small modal)
+        const countText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 10,
+            '0',
+            {
+                fontSize: '18px', // Smaller font for compact modal
+                fontFamily: 'Arial, sans-serif',
+                color: '#2ecc71',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
+        countText.setName('mintCountText');
+        this.mintModalContainer.add(countText);
+
+        // Description text (compact)
+        const desc = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY + 15,
+            'Mint as NFT?',
+            {
+                fontSize: '12px', // Very small font for compact modal
+                fontFamily: 'Arial, sans-serif',
+                color: '#ecf0f1',
+                align: 'center',
+                wordWrap: { width: modalWidth - 40 }
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(103);
+        this.mintModalContainer.add(desc);
+
+        // Confirm button (positioned at bottom of small modal)
+        const confirmBtn = this.add.container(
+            this.cameras.main.centerX - 40,
+            this.cameras.main.centerY + 65 // Position for 200px height modal
+        );
+        confirmBtn.setScrollFactor(0);
+        confirmBtn.setDepth(103);
+
+        const confirmBg = this.add.rectangle(0, 0, 70, 25, 0x2ecc71);
+        confirmBg.setStrokeStyle(1, 0x27ae60);
+        confirmBtn.add(confirmBg);
+
+        const confirmText = this.add.text(0, 0, 'Mint', {
+            fontSize: '12px',
+            fontFamily: 'Arial, sans-serif',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        confirmBtn.add(confirmText);
+
+        confirmBtn.setInteractive(new Phaser.Geom.Rectangle(-35, -12.5, 70, 25), Phaser.Geom.Rectangle.Contains);
+        confirmBtn.on('pointerdown', () => {
+            this.hideMintModal();
+            this.executeMintTransaction(this.pendingMintCount);
+        });
+        confirmBtn.on('pointerover', () => {
+            confirmBg.setFillStyle(0x27ae60);
+            confirmBtn.setScale(1.05);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        confirmBtn.on('pointerout', () => {
+            confirmBg.setFillStyle(0x2ecc71);
+            confirmBtn.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        this.mintModalContainer.add(confirmBtn);
+
+        // Cancel button (positioned at bottom of small modal)
+        const cancelBtn = this.add.container(
+            this.cameras.main.centerX + 40,
+            this.cameras.main.centerY + 65 // Position for 200px height modal
+        );
+        cancelBtn.setScrollFactor(0);
+        cancelBtn.setDepth(103);
+
+        const cancelBg = this.add.rectangle(0, 0, 70, 25, 0xe74c3c);
+        cancelBg.setStrokeStyle(1, 0xc0392b);
+        cancelBtn.add(cancelBg);
+
+        const cancelText = this.add.text(0, 0, 'No', {
+            fontSize: '12px',
+            fontFamily: 'Arial, sans-serif',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        cancelBtn.add(cancelText);
+
+        cancelBtn.setInteractive(new Phaser.Geom.Rectangle(-35, -12.5, 70, 25), Phaser.Geom.Rectangle.Contains);
+        cancelBtn.on('pointerdown', () => {
+            this.hideMintModal();
+        });
+        cancelBtn.on('pointerover', () => {
+            cancelBg.setFillStyle(0xc0392b);
+            cancelBtn.setScale(1.05);
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        cancelBtn.on('pointerout', () => {
+            cancelBg.setFillStyle(0xe74c3c);
+            cancelBtn.setScale(1);
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        this.mintModalContainer.add(cancelBtn);
+    }
+
+    private showMintModal(count: number): void {
+        if (!this.mintModalCreated) {
+            this.createMintModal();
+        }
+
+        this.pendingMintCount = count;
+        this.mintModalVisible = true;
+        this.mintModalContainer.setVisible(true);
+
+        // Update the count text
+        const countText = this.mintModalContainer.getByName('mintCountText') as Phaser.GameObjects.Text;
+        if (countText) {
+            countText.setText(`${count} Carrots`);
+        }
+    }
+
+    private hideMintModal(): void {
+        this.mintModalVisible = false;
+        this.mintModalContainer.setVisible(false);
+        this.pendingMintCount = 0;
+    }
+
+    private updateCollectButton(): void {
+        if (!this.collectButton) return;
+
+        if (this.harvestedCarrotCount > 0 && !this.mintModalVisible) {
+            this.collectButton.setVisible(true);
+            this.collectButtonText.setText(`Collect All (${this.harvestedCarrotCount}) - Press C`);
+
+            // Position at bottom center of screen
+            const camera = this.cameras.main;
+            const x = camera.width / 2;
+            const y = camera.height - 60;
+            this.collectButton.setPosition(x, y);
+        } else {
+            this.collectButton.setVisible(false);
+        }
+    }
+
+    private tryCollectCarrots(): void {
+        if (this.harvestedCarrotCount === 0 || this.isCollecting || this.mintModalVisible) return;
+        this.isCollecting = true;
+
+        const count = this.harvestedCarrotCount;
+        
+        // Animate all carrots flying to center
+        const camera = this.cameras.main;
+        const targetX = camera.worldView.centerX;
+        const targetY = camera.worldView.centerY;
+
+        this.droppedCarrots.forEach((carrot, key) => {
+            // Animate carrot
+            this.tweens.add({
+                targets: carrot,
+                x: targetX,
+                y: targetY,
+                scale: 0.3,
+                alpha: 0.5,
+                duration: 500,
+                ease: 'Power2',
+                onComplete: () => {
+                    carrot.destroy();
+                }
+            });
+        });
+
+        // Clear dropped carrots and batch mint them
+        this.time.delayedCall(500, async () => {
+            const carrotItems: GameItem[] = [];
+
+            this.droppedCarrots.forEach((carrot) => {
+                const gameItemId = carrot.getData('gameItemId') as string | undefined;
+                const itemId = gameItemId || `carrot_${Date.now()}_${Phaser.Math.RND.uuid().slice(0, 6)}`;
+
+                carrotItems.push({
+                    id: itemId,
+                    name: 'Carrot',
+                    description: 'Freshly harvested carrot from OneValley farm',
+                    type: 'consumable',
+                    rarity: 1,
+                    stats: [5, 10],
+                });
+            });
+
+            this.droppedCarrots.clear();
+            this.harvestedCarrotCount = 0;
+            this.isCollecting = false;
+
+            // Batch mint all collected carrots using AutoMintService
+            const autoMint = AutoMintService.getInstance();
+
+            // Queue all carrots for batch minting (background process)
+            console.log(`🥕 Queueing ${carrotItems.length} carrots for auto-minting...`);
+            await autoMint.batchMintItems(carrotItems);
+
+            // Show collection notification
+            this.showTransactionNotification(`Collected ${carrotItems.length} carrots! Auto-minting in background...`, 'success', 3000);
+        });
+    }
+
+    // Old showMintConfirmationDialog method replaced with new modal pattern following transaction details modal
+    // Removed: showTransactionProgressDialog, updateTransactionDialog, showTransactionSuccessDialog methods
+    // Now using UIScene.showTransactionDetailsModal() for consistent UI
+
+    private async executeMintTransaction(count: number): Promise<void> {
+        try {
+            // Show transaction notification
+            this.showTransactionNotification('Initiating blockchain minting...', 'info', 3000);
+
+            // Check wallet bridge status first
+            if (!this.walletBridge.isWalletReady()) {
+                const connectionStatus = this.walletBridge.getConnectionStatus();
+                if (!connectionStatus.isConnected) {
+                    this.showTransactionNotification('Please connect your OneChain wallet first!', 'warning', 4000);
+                    return;
+                }
+                this.showTransactionNotification('Wallet services not ready. Please refresh the page.', 'warning', 4000);
+                return;
+            }
+
+            // Check wallet balance
+            try {
+                const balance = await this.walletBridge.getWalletBalance();
+                if (parseFloat(balance) < 0.01) { // Minimum 0.01 SUI for gas
+                    this.showTransactionNotification('Insufficient balance for minting fees!', 'warning', 4000);
+                    return;
+                }
+            } catch (balanceError) {
+                console.warn('Could not check wallet balance:', balanceError);
+            }
+
+            // Create crop data for minting
+            const mintBatchTimestamp = Date.now();
+            const crops = Array.from({ length: count }, (_, i) => ({
+                type: 'carrot' as const,
+                quality: 70 + Math.floor(Math.random() * 30), // Quality 70-100
+                quantity: 1,
+                harvestTimestamp: mintBatchTimestamp + i,
+                gameItemId: `carrot_mint_${mintBatchTimestamp}_${i}`
+            }));
+
+            // Execute real blockchain minting using wallet bridge
+            const mintResult = await this.oneChainHarvester.mintHarvestedCrops(crops);
+
+            if (mintResult.success) {
+                // Register minted NFTs with auto-mint registry for downstream systems
+                if (mintResult.itemIds && mintResult.itemIds.length > 0) {
+                    const autoMint = AutoMintService.getInstance();
+                    mintResult.itemIds.forEach((nftId, index) => {
+                        const sourceCrop = crops[index];
+                        const quality = sourceCrop?.quality ?? 70;
+                        const rarity = quality >= 90 ? 4 : quality >= 70 ? 3 : quality >= 50 ? 2 : 1;
+
+                        autoMint.registerMintedItem({
+                            id: sourceCrop?.gameItemId || nftId,
+                            name: `${sourceCrop?.type ?? 'Crop'} Harvest`,
+                            description: sourceCrop?.type
+                                ? `Freshly harvested ${sourceCrop.type} from OneValley`
+                                : 'Minted crop from OneValley farm',
+                            type: 'resource',
+                            rarity,
+                            stats: [quality, sourceCrop?.quantity ?? 1, 10]
+                        }, nftId);
+                    });
+                }
+
+                // Get UIScene and show real transaction details
+                const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+                if (uiScene && mintResult.transactionFlow) {
+                    // Convert transaction flow to display format
+                    const mintTransaction = {
+                        transactionHash: mintResult.transactionHash!,
+                        blockNumber: mintResult.blockNumber,
+                        blockConfirmation: 'confirmed',
+                        gasUsed: mintResult.transactionFlow.gasUsed,
+                        gasPrice: '1000 MIST',
+                        gasCost: `${(mintResult.transactionFlow.gasCost / 1000000000).toFixed(6)} SUI`,
+                        timestamp: Date.now(),
+                        status: 'completed' as const,
+                        itemsTraded: {
+                            playerItems: [],
+                            npcItems: [
+                                {
+                                    id: `minted-carrot-${Date.now()}`,
+                                    name: `${count} Carrot NFT${count > 1 ? 's' : ''}`,
+                                    quantity: count,
+                                    spriteKey: 'carrot_stage3'
+                                }
+                            ]
+                        },
+                        transactionType: 'mint' as const,
+                        price: undefined,
+                        explorerUrl: this.walletBridge.getTransactionExplorerUrl(mintResult.transactionHash!)
+                    };
+
+                    console.log('Real minting transaction completed:', mintTransaction);
+
+                    // Set the transaction and show the modal using UIScene's existing system
+                    uiScene.currentTransaction = mintTransaction;
+                    uiScene.showTransactionDetailsModal();
+
+                    this.showTransactionNotification(
+                        `Successfully minted ${count} Carrot NFTs on OneChain! 🎉`,
+                        'success',
+                        5000
+                    );
+                }
+            } else {
+                this.showTransactionNotification(
+                    `Minting failed: ${mintResult.error || 'Unknown error'}`,
+                    'warning',
+                    4000
+                );
+            }
+        } catch (error) {
+            console.error('Error executing mint transaction:', error);
+            this.showTransactionNotification(
+                `Minting error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                'warning',
+                4000
+            );
+        }
+    }
+
     destroy(): void {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
-        this.windTimer.destroy();
-        
+        if (this.windTimer) {
+            this.windTimer.destroy();
+        }
+
         // Stop background music
         if (this.bgMusic) {
             this.bgMusic.stop();
         }
-    }
 
-    // In FarmScene class
-    public addItemToInventory(itemId: string, itemType: string): void {
-        const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
-        if (!uiScene) return;
-
-        // Find first empty slot or implement your own logic
-        for (let i = 0; i < 8; i++) {
-            const slot = uiScene.getSlot(i); // You'll need to add this getter to UIScene
-            if (!slot?.itemId) {
-                uiScene.addItem(itemId, i, itemType);
-                break;
-            }
+        // Clean up contextual action system
+        if (this.floatingHintManager) {
+            this.floatingHintManager.destroy();
         }
     }
 }
