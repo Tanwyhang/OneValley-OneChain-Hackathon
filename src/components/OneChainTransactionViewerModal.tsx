@@ -47,10 +47,10 @@ export const OneChainTransactionViewerModal: React.FC<OneChainTransactionViewerM
 
       if (transactionDetails) {
         const realBlockDetails = {
-          blockNumber: transactionDetails.block?.timestamp || Math.floor(Date.now() / 5000),
+          blockNumber: transactionDetails.checkpoint ? Number(transactionDetails.checkpoint) : Math.floor(Date.now() / 5000),
           blockHash: transactionDetails.digest || transaction.transactionHash,
-          timestamp: transactionDetails.timestampMs || transaction.endTime || Date.now(),
-          gasLimit: transactionDetails.effects?.gasUsed?.computationCost || transaction.gasUsed,
+          timestamp: transactionDetails.timestampMs ? Number(transactionDetails.timestampMs) : (transaction.endTime || Date.now()),
+          gasLimit: transactionDetails.effects?.gasUsed?.computationCost ? Number(transactionDetails.effects.gasUsed.computationCost) : transaction.gasUsed,
           gasUsed: transaction.gasUsed,
           gasPrice: 0.001, // OneChain has stable gas prices
           status: transactionDetails.effects?.status?.status || 'success',
@@ -264,17 +264,15 @@ export const OneChainTransactionViewerModal: React.FC<OneChainTransactionViewerM
                 {transaction.steps.map((step, index) => (
                   <div
                     key={step.id}
-                    className={`flex items-start space-x-3 p-3 rounded ${
-                      index === transaction.currentStep ? 'bg-blue-900 bg-opacity-30' : ''
-                    }`}
+                    className={`flex items-start space-x-3 p-3 rounded ${index === transaction.currentStep ? 'bg-blue-900 bg-opacity-30' : ''
+                      }`}
                   >
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                      index < transaction.currentStep
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${index < transaction.currentStep
                         ? 'bg-green-600 text-white'
                         : index === transaction.currentStep
                           ? 'bg-blue-600 text-white animate-pulse'
                           : 'bg-gray-700 text-gray-400'
-                    }`}>
+                      }`}>
                       {index < transaction.currentStep ? '✓' : index + 1}
                     </div>
                     <div className="flex-1">

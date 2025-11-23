@@ -25,12 +25,12 @@ export class UIScene extends Phaser.Scene {
     #hudContainer!: Phaser.GameObjects.Container;
     #hearts!: Phaser.GameObjects.Image[];
     #hpText!: Phaser.GameObjects.Text;
-    
+
     // HP Bar properties (deprecated, keeping for compatibility)
     private hpBarBackground!: Phaser.GameObjects.Graphics;
     private hpBarFill!: Phaser.GameObjects.Graphics;
     private hpText!: Phaser.GameObjects.Text;
-    
+
     private itemBarContainer!: Phaser.GameObjects.Container;
     private slots: Slot[] = [];
     private selectedIndex: number = 0;
@@ -97,7 +97,7 @@ export class UIScene extends Phaser.Scene {
     private craftingKey!: Phaser.Input.Keyboard.Key;
     private craftingArrow?: Phaser.GameObjects.Triangle;
     private craftingResultAvailable: boolean = false;
-    private readonly craftingPrimaryResultKeys: string[] = ['gem_01j','crystal_01j','gem_01i','crystal_01i'];
+    private readonly craftingPrimaryResultKeys: string[] = ['gem_01j', 'crystal_01j', 'gem_01i', 'crystal_01i'];
 
     // Guide menu properties
     private guideMenuVisible: boolean = false;
@@ -356,9 +356,9 @@ export class UIScene extends Phaser.Scene {
         const startY = 30;
         const heartSpacing = 30; // Decreased space between hearts
         const heartScale = 0.06; // Even bigger scale from 900x565
-        
+
         // HP text removed - hearts only
-        
+
         // Create 10 hearts
         for (let i = 0; i < 10; i++) {
             const heart = this.add.image(
@@ -382,7 +382,7 @@ export class UIScene extends Phaser.Scene {
     private updateHPBar(data: { current: number; max: number }): void {
         // Each heart represents 10 HP
         const heartsToShow = Math.ceil(data.current / 10);
-        
+
         // Update each heart visibility and alpha
         this.#hearts.forEach((heart, index) => {
             if (index < heartsToShow) {
@@ -407,8 +407,8 @@ export class UIScene extends Phaser.Scene {
         // Add keyboard controls for slot selection (1-8)
         for (let i = 0; i < this.SLOT_COUNT; i++) {
             // Use direct key codes: 49='1', 50='2', ..., 56='8'
-          const keyCode = 49 + i;
-          const key = this.input.keyboard?.addKey(keyCode);
+            const keyCode = 49 + i;
+            const key = this.input.keyboard?.addKey(keyCode);
             const handler = () => {
                 this.selectedIndex = i;
                 this.updateSelection();
@@ -525,7 +525,7 @@ export class UIScene extends Phaser.Scene {
         if (!this.scene.settings.active) return;
         this.itemBarContainer.setVisible(true);
         this.updatePosition();
-        
+
         // Update sell button position on resize
         const sellButton = this.marketplaceContainer?.getData('sellButton');
         if (sellButton) {
@@ -559,7 +559,7 @@ export class UIScene extends Phaser.Scene {
             const farmScene = this.scene.get(SCENE_KEYS.FARM);
             if (farmScene && farmScene.scene.isActive()) {
                 const hudBridge = HUDBridgeService.getInstance();
-                
+
                 if (this.backpackVisible) {
                     this.hideBackpack();
                     hudBridge.toggleBackpack(false);
@@ -592,10 +592,10 @@ export class UIScene extends Phaser.Scene {
         escKey.on('down', () => {
             if (this.transactionDetailsVisible) {
                 this.hideTransactionDetails();
-            } 
+            }
             else if (this.craftingVisible) {
                 this.hideCrafting();
-            }else if (this.backpackVisible) {
+            } else if (this.backpackVisible) {
                 this.hideBackpack();
                 if (this.marketplaceVisible) {
                     this.marketplaceContainer.setVisible(true);
@@ -624,7 +624,7 @@ export class UIScene extends Phaser.Scene {
         if (index < 0 || index >= this.SLOT_COUNT) return;
         this.selectedIndex = index;
         this.updateSelection();
-        
+
         // Update React HUD
         const hudBridge = HUDBridgeService.getInstance();
         hudBridge.setSelectedSlot(index);
@@ -695,18 +695,18 @@ export class UIScene extends Phaser.Scene {
     private createBackpackSlots(backpackScale: number): void {
         // Slots scale with backpack automatically
         const slotSize = 48 * backpackScale;
-        
+
         const cols = this.BACKPACK_COLS;
         const rows = this.BACKPACK_ROWS;
-        
+
         // Grid area is 368x270, centered in backpack
         const gridWidth = cols * slotSize;
         const gridHeight = rows * slotSize;
-        
+
         // ADJUST THESE VALUES TO MOVE THE GRID (scaled with backpack)
         const offsetX = 3 * backpackScale; // Positive = move right, Negative = move left
         const offsetY = 14 * backpackScale; // Positive = move down, Negative = move up
-        
+
         // Calculate starting position (top-left of grid)
         const centerX = this.cameras.main.centerX;
         const centerY = this.cameras.main.centerY;
@@ -767,9 +767,9 @@ export class UIScene extends Phaser.Scene {
             if (pointer.leftButtonDown()) {
                 // Check for double-click
                 const currentTime = this.time.now;
-                const isDoubleClick = this.lastClickSlot && 
-                    this.lastClickSlot.index === slotIndex && 
-                    this.lastClickSlot.type === slotType && 
+                const isDoubleClick = this.lastClickSlot &&
+                    this.lastClickSlot.index === slotIndex &&
+                    this.lastClickSlot.type === slotType &&
                     (currentTime - this.lastClickTime) < this.DOUBLE_CLICK_DELAY;
 
                 if (isDoubleClick) {
@@ -796,34 +796,34 @@ export class UIScene extends Phaser.Scene {
 
         const targetItemId = slot.itemId;
         const currentCount = slot.countText ? parseInt(slot.countText.text) : 1;
-        
+
         if (currentCount >= this.MAX_STACK_SIZE) return;
 
         // Determine which slots to check
         const slotsToCheck = slotType === 'itembar' ? this.slots : this.backpackSlots;
-        
+
         // Collect items from other slots
         let totalCollected = 0;
         const spaceAvailable = this.MAX_STACK_SIZE - currentCount;
 
         for (let i = 0; i < slotsToCheck.length; i++) {
             if (i === slotIndex) continue; // Skip the target slot
-            
+
             const otherSlot = slotsToCheck[i];
             if (otherSlot.itemId === targetItemId) {
                 const otherCount = otherSlot.countText ? parseInt(otherSlot.countText.text) : 1;
                 const canCollect = Math.min(otherCount, spaceAvailable - totalCollected);
-                
+
                 if (canCollect > 0) {
                     totalCollected += canCollect;
                     const remaining = otherCount - canCollect;
-                    
+
                     if (remaining > 0) {
                         this.updateSlotCount(otherSlot, i, slotType, remaining);
                     } else {
                         this.clearSlot(i, slotType);
                     }
-                    
+
                     if (totalCollected >= spaceAvailable) break;
                 }
             }
@@ -1252,7 +1252,7 @@ export class UIScene extends Phaser.Scene {
         this.backpackVisible = false;
         this.backpackContainer.setVisible(false);
         this.backpackOverlay.setVisible(false);
-        
+
         // If marketplace was open, show it back
         if (this.marketplaceVisible) {
             this.marketplaceContainer.setVisible(true);
@@ -1514,7 +1514,7 @@ export class UIScene extends Phaser.Scene {
                     }
                     slot.itemId = this.heldItem.itemId;
                     slot.itemType = this.heldItem.itemType;
-                    if (1 > 1) {/* no count text for 1 by default */}
+                    if (1 > 1) {/* no count text for 1 by default */ }
                     this.heldItem.count -= 1;
                     if (this.heldItem.count <= 0) this.clearHeldItem(); else this.updateHeldItemGhost();
                 } else if (slot.itemId === this.heldItem.itemId) {
@@ -1907,7 +1907,7 @@ export class UIScene extends Phaser.Scene {
         // ADJUST CLOSE BUTTON POSITION HERE
         const closeOffsetX = -10; // Increase to move left, decrease to move right
         const closeOffsetY = 16; // Increase to move down, decrease to move up
-        
+
         // Position close button at top-right corner
         const closeX = frameCenterX + (frameWidth / 2) - (closeOffsetX * marketplaceScale);
         const closeY = frameCenterY - (frameHeight / 2) + (closeOffsetY * marketplaceScale);
@@ -1983,7 +1983,7 @@ export class UIScene extends Phaser.Scene {
         sellButton.setScrollFactor(0);
         sellButton.setInteractive({ useHandCursor: true, dropZone: true });
         sellButton.setVisible(false); // Hidden by default, show when marketplace opens
-        
+
         // Update position dynamically
         this.updateSellButtonPosition(sellButton);
 
@@ -2002,7 +2002,7 @@ export class UIScene extends Phaser.Scene {
         });
 
         this.#hudContainer.add(sellButton);
-        
+
         // Store reference for show/hide
         this.marketplaceContainer.setData('sellButton', sellButton);
     }
@@ -2037,15 +2037,15 @@ export class UIScene extends Phaser.Scene {
         // Position after item bar (to the right)
         const itemBarX = this.cameras.main.centerX;
         const itemBarY = this.cameras.main.height - 60;
-        
+
         // Calculate item bar width (8 slots * 48px + 7 gaps * 6px)
         const slotSize = 48;
         const spacing = 6;
         const itemBarWidth = (this.SLOT_COUNT * (slotSize + spacing)) - spacing;
-        
+
         const sellX = itemBarX + (itemBarWidth / 2) + 20;
         const sellY = itemBarY;
-        
+
         sellButton.setPosition(sellX, sellY);
     }
 
@@ -2074,8 +2074,8 @@ export class UIScene extends Phaser.Scene {
         });
 
         // Get items for selected category from fallback marketplace items
-        const categoryItems = this.FALLBACK_MARKETPLACE_ITEMS[category] || [];
-        
+        const categoryItems = this.FALLBACK_MARKETPLACE_ITEMS[category as keyof typeof this.FALLBACK_MARKETPLACE_ITEMS] || [];
+
         // Fill all 30 marketplace slots with items from the category
         for (let i = 0; i < this.MARKETPLACE_SLOT_COUNT && i < categoryItems.length; i++) {
             const itemId = categoryItems[i];
@@ -2352,14 +2352,14 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceVisible = true;
         this.marketplaceContainer.setVisible(true);
         this.marketplaceOverlay.setVisible(true);
-        
+
         // Load items for current category
         this.loadMarketplaceItems(this.selectedCategory);
-        
+
         // Show sell button
         const sellButton = this.marketplaceContainer.getData('sellButton');
         if (sellButton) sellButton.setVisible(true);
-        
+
         // Disable player movement
         const farmScene = this.scene.get(SCENE_KEYS.FARM) as any;
         if (farmScene && farmScene.player) {
@@ -2371,7 +2371,7 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceVisible = false;
         this.marketplaceContainer.setVisible(false);
         this.marketplaceOverlay.setVisible(false);
-        
+
         // Reset selection
         if (this.selectedMarketplaceSlot !== -1) {
             const slot = this.marketplaceSlots[this.selectedMarketplaceSlot];
@@ -2380,7 +2380,7 @@ export class UIScene extends Phaser.Scene {
             }
             this.selectedMarketplaceSlot = -1;
         }
-        
+
         // Hide sell button
         const sellButton = this.marketplaceContainer.getData('sellButton');
         if (sellButton) sellButton.setVisible(false);
@@ -2460,7 +2460,7 @@ export class UIScene extends Phaser.Scene {
         // Add decorative top border with gradient effect
         const topBorder = this.add.rectangle(
             this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            this.cameras.main.centerY - (modalHeight / 2) + titleHeight / 2,
             modalWidth - 40,
             4,
             0x00d4ff
@@ -2470,7 +2470,7 @@ export class UIScene extends Phaser.Scene {
         // Create title background panel with relative positioning
         const titlePanel = this.add.rectangle(
             this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            this.cameras.main.centerY - (modalHeight / 2) + titleHeight / 2,
             modalWidth - 60,
             titleHeight,
             0x2a2a4e,
@@ -2482,7 +2482,7 @@ export class UIScene extends Phaser.Scene {
         // Title with improved typography and shadow
         const title = this.add.text(
             this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            this.cameras.main.centerY - (modalHeight / 2) + titleHeight / 2,
             '🔗 TRANSACTION DETAILS',
             {
                 fontSize: '26px',
@@ -2502,13 +2502,13 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(title);
 
         // Close button with improved styling and relative positioning
-        const closeBtnX = this.cameras.main.centerX + (modalWidth/2) - padding - closeButtonSize/2;
-        const closeBtnY = this.cameras.main.centerY - (modalHeight/2) + titleHeight/2;
+        const closeBtnX = this.cameras.main.centerX + (modalWidth / 2) - padding - closeButtonSize / 2;
+        const closeBtnY = this.cameras.main.centerY - (modalHeight / 2) + titleHeight / 2;
 
         const closeBtnBg = this.add.circle(
             closeBtnX,
             closeBtnY,
-            closeButtonSize/2,
+            closeButtonSize / 2,
             0xff4444,
             0.9
         ).setInteractive().setScrollFactor(0).setDepth(104);
@@ -2562,7 +2562,7 @@ export class UIScene extends Phaser.Scene {
 
     private createImprovedTransactionContentPanels(modalWidth: number, modalHeight: number, padding: number, titleHeight: number): void {
         // Content area calculations with relative positioning
-        const contentY = this.cameras.main.centerY - (modalHeight/2) + titleHeight + padding + 20;
+        const contentY = this.cameras.main.centerY - (modalHeight / 2) + titleHeight + padding + 20;
         const sectionHeight = 80;
         const sectionGap = 15;
         const labelHeight = 20;
@@ -2582,8 +2582,8 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(hashPanel);
 
         const hashLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            hashY - (sectionHeight/2) + labelHeight/2,
+            this.cameras.main.centerX - (modalWidth / 2) + padding + 10,
+            hashY - (sectionHeight / 2) + labelHeight / 2,
             '🔑 Transaction Hash:',
             {
                 fontSize: '15px',
@@ -2608,8 +2608,8 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(statusPanel);
 
         const statusLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            statusY - (sectionHeight/2 - 5) + labelHeight/2,
+            this.cameras.main.centerX - (modalWidth / 2) + padding + 10,
+            statusY - (sectionHeight / 2 - 5) + labelHeight / 2,
             '⚡ Status:',
             {
                 fontSize: '15px',
@@ -2634,8 +2634,8 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(explorerPanel);
 
         const explorerLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding + 10,
-            explorerY - (sectionHeight/2 + 10) + labelHeight/2,
+            this.cameras.main.centerX - (modalWidth / 2) + padding + 10,
+            explorerY - (sectionHeight / 2 + 10) + labelHeight / 2,
             '🌐 External Link:',
             {
                 fontSize: '15px',
@@ -2764,8 +2764,8 @@ export class UIScene extends Phaser.Scene {
         const isNPCTransaction = this.currentTransaction.itemsTraded?.npcItems?.length > 0 && !isMintingTransaction;
 
         const transactionTitle = isMintingTransaction ? '🥕 MINTING COMPLETED' :
-                               isMarketplaceTransaction ? '🛒 MARKETPLACE PURCHASE' :
-                               isNPCTransaction ? '🤝 NPC TRADE COMPLETED' : '🔗 TRANSACTION DETAILS';
+            isMarketplaceTransaction ? '🛒 MARKETPLACE PURCHASE' :
+                isNPCTransaction ? '🤝 NPC TRADE COMPLETED' : '🔗 TRANSACTION DETAILS';
 
         // Modal dimensions for relative positioning
         const modalWidth = 650;
@@ -2776,7 +2776,7 @@ export class UIScene extends Phaser.Scene {
         // Update title with improved positioning
         const titleText = this.add.text(
             this.cameras.main.centerX,
-            this.cameras.main.centerY - (modalHeight/2) + titleHeight/2,
+            this.cameras.main.centerY - (modalHeight / 2) + titleHeight / 2,
             transactionTitle,
             {
                 fontSize: '26px',
@@ -2797,7 +2797,7 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(titleText);
 
         // Content area calculations with proper spacing
-        const contentStartY = this.cameras.main.centerY - (modalHeight/2) + titleHeight + padding;
+        const contentStartY = this.cameras.main.centerY - (modalHeight / 2) + titleHeight + padding;
         let nextY = contentStartY;
 
         // Add minting-specific content
@@ -2846,7 +2846,7 @@ export class UIScene extends Phaser.Scene {
 
         // Transaction details section
         const detailsLabel = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
+            this.cameras.main.centerX - (modalWidth / 2) + padding,
             nextY + 20,
             '📋 Transaction Details',
             {
@@ -2862,7 +2862,7 @@ export class UIScene extends Phaser.Scene {
 
         // Transaction hash display
         const hashText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
+            this.cameras.main.centerX - (modalWidth / 2) + padding,
             nextY + 20,
             'Hash:',
             {
@@ -2876,7 +2876,7 @@ export class UIScene extends Phaser.Scene {
         this.transactionDetailsContainer.add(hashText);
 
         const hashValueText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
+            this.cameras.main.centerX - (modalWidth / 2) + padding,
             nextY + 45,
             this.currentTransaction.transactionHash || 'No hash available',
             {
@@ -2893,7 +2893,7 @@ export class UIScene extends Phaser.Scene {
 
         // Status display
         const statusText = this.add.text(
-            this.cameras.main.centerX - (modalWidth/2) + padding,
+            this.cameras.main.centerX - (modalWidth / 2) + padding,
             nextY,
             `Status: ${this.currentTransaction.status?.toUpperCase() || 'UNKNOWN'}`,
             {
@@ -2912,7 +2912,7 @@ export class UIScene extends Phaser.Scene {
         // Price information (for marketplace transactions)
         if (this.currentTransaction.price && isMarketplaceTransaction) {
             const priceText = this.add.text(
-                this.cameras.main.centerX - (modalWidth/2) + padding,
+                this.cameras.main.centerX - (modalWidth / 2) + padding,
                 nextY,
                 `💰 Price: ${this.currentTransaction.price} ◈`,
                 {
@@ -2930,7 +2930,7 @@ export class UIScene extends Phaser.Scene {
         // Gas information
         if (this.currentTransaction.gasUsed) {
             const gasText = this.add.text(
-                this.cameras.main.centerX - (modalWidth/2) + padding,
+                this.cameras.main.centerX - (modalWidth / 2) + padding,
                 nextY,
                 `⛽ Gas Used: ${this.currentTransaction.gasUsed.toLocaleString()} | Cost: ${this.currentTransaction.gasCost || '0.0025'} SUI`,
                 {
@@ -2950,7 +2950,7 @@ export class UIScene extends Phaser.Scene {
 
             if (items.playerItems?.length > 0) {
                 const playerItemsText = this.add.text(
-                    this.cameras.main.centerX - (modalWidth/2) + padding,
+                    this.cameras.main.centerX - (modalWidth / 2) + padding,
                     nextY,
                     `✅ Received: ${items.playerItems.map((item: any) => `${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ''}`).join(', ')}`,
                     {
@@ -2968,7 +2968,7 @@ export class UIScene extends Phaser.Scene {
 
             if (items.npcItems?.length > 0) {
                 const npcItemsText = this.add.text(
-                    this.cameras.main.centerX - (modalWidth/2) + padding,
+                    this.cameras.main.centerX - (modalWidth / 2) + padding,
                     nextY,
                     `🔄 Traded: ${items.npcItems.map((item: any) => `${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ''}`).join(', ')}`,
                     {
@@ -2988,7 +2988,7 @@ export class UIScene extends Phaser.Scene {
         if (!this.currentTransaction.transactionHash || this.currentTransaction.transactionHash.startsWith('0x')) {
             const testButton = this.add.rectangle(
                 this.cameras.main.centerX,
-                this.cameras.main.centerY + (modalHeight/2) - padding - 25,
+                this.cameras.main.centerY + (modalHeight / 2) - padding - 25,
                 200,
                 40,
                 0x444444,
@@ -2998,7 +2998,7 @@ export class UIScene extends Phaser.Scene {
 
             const testButtonText = this.add.text(
                 this.cameras.main.centerX,
-                this.cameras.main.centerY + (modalHeight/2) - padding - 25,
+                this.cameras.main.centerY + (modalHeight / 2) - padding - 25,
                 '🔍 VIEW ON BLOCKCHAIN',
                 {
                     fontSize: '14px',
@@ -3150,7 +3150,7 @@ export class UIScene extends Phaser.Scene {
         this.marketplaceContainer.add(rarityBorder);
 
         // Add price text
-        const priceText = this.add.text(x, y + slotSize/2 + 10, `${item.price.toLocaleString()} ◈`, {
+        const priceText = this.add.text(x, y + slotSize / 2 + 10, `${item.price.toLocaleString()} ◈`, {
             fontSize: '10px',
             color: '#10b981',
             align: 'center'
@@ -3539,14 +3539,14 @@ export class UIScene extends Phaser.Scene {
     public hideNPCTrade(): void {
         this.npcTradeVisible = false;
         this.npcTradeLocked = false;
-        
+
         if (this.npcTradeContainer) {
             this.npcTradeContainer.setVisible(false);
         }
         if (this.npcTradeOverlay) {
             this.npcTradeOverlay.setVisible(false);
         }
-        
+
         // Close backpack when closing NPC trade
         if (this.backpackVisible) {
             this.hideBackpack();
@@ -3654,7 +3654,7 @@ export class UIScene extends Phaser.Scene {
         for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
             const x = 80; // More margin from left
             const y = leftStartY + i * (slotSize + spacing);
-            
+
             const slotBg = this.add.image(x, y, 'slot');
             slotBg.setOrigin(0.5);
             slotBg.setScale(1.35); // Scale up slot
@@ -3676,7 +3676,7 @@ export class UIScene extends Phaser.Scene {
         for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
             const x = this.cameras.main.width - 80; // More margin from right
             const y = rightStartY + i * (slotSize + spacing);
-            
+
             const slotBg = this.add.image(x, y, 'slot');
             slotBg.setOrigin(0.5);
             slotBg.setScale(1.35); // Scale up slot
@@ -3760,7 +3760,7 @@ export class UIScene extends Phaser.Scene {
 
     private makeNPCSlotInteractive(slotBg: Phaser.GameObjects.Image, slotIndex: number, side: 'left' | 'right'): void {
         slotBg.setInteractive();
-        
+
         slotBg.on('pointerover', () => {
             // Don't allow interaction with left slots when locked
             if (this.npcTradeLocked && side === 'left') return;
@@ -3769,7 +3769,7 @@ export class UIScene extends Phaser.Scene {
                 slotBg.setTint(0xcccccc);
             }
         });
-        
+
         slotBg.on('pointerout', () => {
             this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
             slotBg.clearTint();
@@ -3780,7 +3780,7 @@ export class UIScene extends Phaser.Scene {
             if (this.npcTradeLocked && side === 'left') return;
             // Don't allow interaction with right slots (Herman's side) at all
             if (side === 'right') return;
-            
+
             if (pointer.leftButtonDown()) {
                 this.handleNPCSlotClick(slotIndex, side);
             } else if (pointer.rightButtonDown()) {
@@ -4047,19 +4047,19 @@ export class UIScene extends Phaser.Scene {
         givingItems.forEach((item, index) => {
             const xPos = (index % 4) * 70;
             const yPos = Math.floor(index / 4) * 70;
-            
+
             // Item slot background
             const itemSlot = this.add.image(xPos, yPos, 'slot');
             itemSlot.setScale(0.8);
             giveItemsContainer.add(itemSlot);
-            
+
             // Item image
             if (this.textures.exists(item.id)) {
                 const itemImage = this.add.image(xPos, yPos, item.id);
                 itemImage.setDisplaySize(36, 36);
                 giveItemsContainer.add(itemImage);
             }
-            
+
             // Item count
             if (item.count > 1) {
                 const countText = this.add.text(xPos + 16, yPos + 16, item.count.toString(), {
@@ -4101,19 +4101,19 @@ export class UIScene extends Phaser.Scene {
         receivingItems.forEach((item, index) => {
             const xPos = (index % 4) * 70;
             const yPos = Math.floor(index / 4) * 70;
-            
+
             // Item slot background
             const itemSlot = this.add.image(xPos, yPos, 'slot');
             itemSlot.setScale(0.8);
             receiveItemsContainer.add(itemSlot);
-            
+
             // Item image
             if (this.textures.exists(item.id)) {
                 const itemImage = this.add.image(xPos, yPos, item.id);
                 itemImage.setDisplaySize(36, 36);
                 receiveItemsContainer.add(itemImage);
             }
-            
+
             // Item count
             if (item.count > 1) {
                 const countText = this.add.text(xPos + 16, yPos + 16, item.count.toString(), {
@@ -4140,7 +4140,7 @@ export class UIScene extends Phaser.Scene {
         }
 
         // Cancel button with theme styling
-        const cancelBg = this.add.rectangle(-120,220, 180, 60, 0xc94c4c);
+        const cancelBg = this.add.rectangle(-120, 220, 180, 60, 0xc94c4c);
         cancelBg.setStrokeStyle(3, 0x8b0000);
         cancelBg.setInteractive({ useHandCursor: true });
 
@@ -4196,7 +4196,7 @@ export class UIScene extends Phaser.Scene {
             modalBg, innerBorder, titleBg, title, giveLabel, divider, receiveLabel,
             cancelBg, cancelText, confirmBg, confirmText
         ]);
-        
+
         // Add item containers
         this.npcConfirmModal.add(giveItemsContainer);
         this.npcConfirmModal.add(receiveItemsContainer);
@@ -4503,7 +4503,7 @@ export class UIScene extends Phaser.Scene {
                 const itemId = slot.itemId;
                 const itemType = slot.itemType || 'item';
                 const count = slot.countText ? parseInt(slot.countText.text) : 1;
-                
+
                 // Find first empty slot in backpack
                 for (let backpackIndex = 0; backpackIndex < this.BACKPACK_SLOT_COUNT; backpackIndex++) {
                     const backpackSlot = this.backpackSlots[backpackIndex];
@@ -4514,22 +4514,22 @@ export class UIScene extends Phaser.Scene {
                 }
             }
         }
-        
+
         // Clear all items from NPC trade slots
         for (let i = 0; i < this.NPC_TRADE_SLOTS_PER_SIDE; i++) {
             this.clearNPCSlot(i, 'left');
             this.clearNPCSlot(i, 'right');
         }
-        
+
         // Unlock if locked
         if (this.npcTradeLocked) {
             this.npcTradeLocked = false;
-            
+
             // Clear tints
             [...this.npcLeftSlots, ...this.npcRightSlots].forEach(slot => {
                 (slot.bg as Phaser.GameObjects.Image).clearTint();
             });
-            
+
             // Hide ticks
             if (this.npcPlayerTick) {
                 this.npcPlayerTick.setVisible(false);
@@ -4537,13 +4537,13 @@ export class UIScene extends Phaser.Scene {
             if (this.npcHermanTick) {
                 this.npcHermanTick.setVisible(false);
             }
-            
+
             // Reset accept button
             if (this.npcAcceptButton) {
                 this.npcAcceptButton.setText('Accept');
             }
         }
-        
+
         // Close trade window
         this.hideNPCTrade();
     }
@@ -4861,7 +4861,7 @@ export class UIScene extends Phaser.Scene {
         for (let i = 0; i < Math.min(4, this.npcHermanItems.length); i++) {
             this.time.delayedCall(1000 * (i + 1), () => {
                 this.addItemToNPCSlot(this.npcHermanItems[i], i, 'right', 'item', 1);
-                
+
                 // After filling all 4 items, show Herman's tick
                 if (i === 3) {
                     this.time.delayedCall(200, () => {
@@ -5313,11 +5313,11 @@ Double Click - Group same items
         this.exitConfirmationContainer.add(innerBorder);
 
         // Title with background panel
-        const titlePanel = this.add.rectangle(0, -panelHeight/2 + titleHeight/2 + padding/2, panelWidth - 40, titleHeight, 0x1a1a1a, 0.9);
+        const titlePanel = this.add.rectangle(0, -panelHeight / 2 + titleHeight / 2 + padding / 2, panelWidth - 40, titleHeight, 0x1a1a1a, 0.9);
         titlePanel.setStrokeStyle(2, 0x444444);
         this.exitConfirmationContainer.add(titlePanel);
 
-        const title = this.add.text(0, -panelHeight/2 + titleHeight/2 + padding/2, '🚪 EXIT TO MENU', {
+        const title = this.add.text(0, -panelHeight / 2 + titleHeight / 2 + padding / 2, '🚪 EXIT TO MENU', {
             fontSize: '32px',
             color: '#ffcc00',
             fontStyle: 'bold',
@@ -5334,8 +5334,8 @@ Double Click - Group same items
         this.exitConfirmationContainer.add(title);
 
         // Close button (X) - positioned relative to title panel
-        const closeBtnX = panelWidth/2 - padding/2 - closeButtonSize/2;
-        const closeBtnY = -panelHeight/2 + titleHeight/2 + padding/2;
+        const closeBtnX = panelWidth / 2 - padding / 2 - closeButtonSize / 2;
+        const closeBtnY = -panelHeight / 2 + titleHeight / 2 + padding / 2;
         const closeBtn = this.add.text(closeBtnX, closeBtnY, '✕', {
             fontSize: '28px',
             color: '#ff4444',
@@ -5376,15 +5376,15 @@ Double Click - Group same items
         this.exitConfirmationContainer.add(message);
 
         // Button container for better alignment
-        const buttonY = panelHeight/2 - padding - buttonHeight/2;
+        const buttonY = panelHeight / 2 - padding - buttonHeight / 2;
 
         // Yes button (confirm exit) - styled as danger action
-        const yesBtnBg = this.add.rectangle(-buttonSpacing - buttonWidth/2, buttonY, buttonWidth, buttonHeight, 0xd32f2f, 0.9);
+        const yesBtnBg = this.add.rectangle(-buttonSpacing - buttonWidth / 2, buttonY, buttonWidth, buttonHeight, 0xd32f2f, 0.9);
         yesBtnBg.setStrokeStyle(3, 0xb71c1c);
         yesBtnBg.setInteractive();
         this.exitConfirmationContainer.add(yesBtnBg);
 
-        const yesBtn = this.add.text(-buttonSpacing - buttonWidth/2, buttonY, 'EXIT', {
+        const yesBtn = this.add.text(-buttonSpacing - buttonWidth / 2, buttonY, 'EXIT', {
             fontSize: '20px',
             color: '#ffffff',
             fontStyle: 'bold',
@@ -5408,12 +5408,12 @@ Double Click - Group same items
         });
 
         // No button (cancel) - styled as safe action
-        const noBtnBg = this.add.rectangle(buttonSpacing + buttonWidth/2, buttonY, buttonWidth, buttonHeight, 0x388e3c, 0.9);
+        const noBtnBg = this.add.rectangle(buttonSpacing + buttonWidth / 2, buttonY, buttonWidth, buttonHeight, 0x388e3c, 0.9);
         noBtnBg.setStrokeStyle(3, 0x2e7d32);
         noBtnBg.setInteractive();
         this.exitConfirmationContainer.add(noBtnBg);
 
-        const noBtn = this.add.text(buttonSpacing + buttonWidth/2, buttonY, 'CANCEL', {
+        const noBtn = this.add.text(buttonSpacing + buttonWidth / 2, buttonY, 'CANCEL', {
             fontSize: '20px',
             color: '#ffffff',
             fontStyle: 'bold',
