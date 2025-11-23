@@ -24,7 +24,7 @@ export interface OpenRouterResponse {
 export class OpenRouterService {
   private apiKey: string;
   private baseUrl: string = 'https://openrouter.ai/api/v1/chat/completions';
-  private model: string = 'openrouter/sherlock-dash-alpha';
+  private model: string = 'x-ai/grok-4.1-fast:free';
   private conversationHistory: ChatMessage[] = [];
 
   constructor() {
