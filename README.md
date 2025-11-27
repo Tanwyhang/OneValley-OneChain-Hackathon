@@ -18,7 +18,7 @@ Key features include:
 ## 🎮 Game Flow
 
 ### 1. Onboarding
-Players start by connecting their wallet or using zkLogin (Google, Twitch, etc.) to enter the game world.
+Players start by connecting their ONECHAIN wallet to enter the game world.
 (screenshot of login/connect wallet screen)
 
 ### 2. Farming & Resource Gathering
